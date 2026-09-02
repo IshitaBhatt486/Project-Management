@@ -17,6 +17,7 @@ import {
   Layers3,
   LayoutDashboard,
   ListTodo,
+  LogOut,
   Menu,
   Moon,
   MoreHorizontal,
@@ -48,6 +49,7 @@ import {
   useListActivity,
   useListProjects,
   useListTasks,
+  useLogout,
   useUpdateProject,
   useUpdateTask,
   type Activity,
@@ -56,6 +58,8 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '@workspace/api-client-react';
+import { AuthGate, useAuthUser } from '@/components/auth-gate';
+import { AuthPage } from '@/components/auth-pages';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Route,
@@ -102,6 +106,7 @@ function PriorityPill({ priority }: { priority: string }) { return <span classNa
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [location] = useLocation();
+  const user = useAuthUser();
   const items = [
     { href: '/', label: 'Overview', icon: LayoutDashboard },
     { href: '/projects', label: 'Projects', icon: FolderKanban },
@@ -116,8 +121,60 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     <div className="sidebar-spacer" />
     <div className="sidebar-note"><Sparkles size={15} /><span>Small steps,<br />visible progress.</span></div>
     <a href="/settings" onClick={onNavigate} className={cx('nav-item', location === '/settings' && 'nav-item-active')} data-testid="link-settings"><Settings2 size={17} /><span>Settings</span></a>
-    <div className="profile-row"><Avatar name="Maya Chen" small /><div><strong>Maya Chen</strong><small>Workspace owner</small></div><MoreHorizontal size={16} /></div>
+     <div className="profile-row"><Avatar name={user?.name || 'Account'} small /><div><strong data-testid="text-sidebar-user-name">{user?.name || 'Account'}</strong><small data-testid="text-sidebar-user-email">{user?.email || 'Signed in'}</small></div><MoreHorizontal size={16} /></div>
   </aside>;
+}
+
+function ProfileMenu() {
+  const user = useAuthUser();
+  const logout = useLogout();
+  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
+  const [open, setOpen] = useState(false);
+  const logoutError = logout.error instanceof Error ? logout.error.message : '';
+
+  const signOut = () => {
+    logout.mutate(undefined, {
+      onSuccess: () => {
+        queryClient.clear();
+        setLocation('/login');
+      },
+    });
+  };
+
+  if (!user) return null;
+  return (
+    <div className="profile-menu">
+      <button
+        className="profile-trigger"
+        onClick={() => setOpen((visible) => !visible)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        data-testid="button-open-profile"
+      >
+        <Avatar name={user.name} small />
+        <span className="profile-trigger-copy">
+          <strong data-testid="text-current-user-name">{user.name}</strong>
+          <small data-testid="text-current-user-email">{user.email}</small>
+        </span>
+        <ChevronDown size={14} className={cx('profile-chevron', open && 'profile-chevron-open')} />
+      </button>
+      {open && (
+        <div className="profile-dropdown" role="menu" data-testid="menu-profile">
+          <div className="profile-dropdown-heading">
+            <span className="profile-dropdown-label">Signed in as</span>
+            <strong>{user.name}</strong>
+            <small>{user.email}</small>
+          </div>
+          {logoutError && <p className="profile-error" role="alert" data-testid="auth-state-logout-error">{logoutError}</p>}
+          <button className="profile-logout" onClick={signOut} disabled={logout.isPending} role="menuitem" data-testid="button-logout">
+            <LogOut size={15} />
+            <span>{logout.isPending ? 'Signing out…' : 'Sign out'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Topbar({ onMenu }: { onMenu: () => void }) {
@@ -130,7 +187,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
     <div className="topbar-actions">
       <button className="icon-btn search-trigger" data-testid="button-search" aria-label="Search"><Search size={18} /><span>Search</span><kbd>⌘ K</kbd></button>
       <button className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} data-testid="button-toggle-theme" aria-label="Toggle theme">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
-      <Avatar name="Maya Chen" small />
+       <ProfileMenu />
     </div>
   </header>;
 }
@@ -163,6 +220,7 @@ function TaskRow({ task, onEdit, onDelete, onStatus }: { task: Task; onEdit?: (t
 function ProgressRing({ value, label }: { value: number; label: string }) { const radius = 32; const circumference = 2 * Math.PI * radius; return <div className="progress-ring"><svg width="84" height="84" viewBox="0 0 84 84"><circle className="ring-track" cx="42" cy="42" r={radius} /><circle className="ring-value" cx="42" cy="42" r={radius} strokeDasharray={circumference} strokeDashoffset={circumference - (value / 100) * circumference} /></svg><div><strong>{value}%</strong><span>{label}</span></div></div>; }
 
 function Overview() {
+  const user = useAuthUser();
   const summaryQuery = useGetDashboardSummary();
   const projectsQuery = useListProjects();
   const tasksQuery = useListTasks();
@@ -176,7 +234,7 @@ function Overview() {
   if (summaryQuery.isLoading || projectsQuery.isLoading || tasksQuery.isLoading) return <LoadingState />;
   if (summaryQuery.isError || projectsQuery.isError || tasksQuery.isError) return <ErrorState onRetry={() => { summaryQuery.refetch(); projectsQuery.refetch(); tasksQuery.refetch(); }} />;
   return <div className="content-stack">
-    <div className="page-heading"><div><p className="eyebrow">Tuesday, October 15, 2024</p><h1>Good morning, Maya<span className="heading-period">.</span></h1><p className="page-subtitle">Here’s the shape of your work today.</p></div><a href="/tasks" className="btn btn-primary" data-testid="link-add-task-overview"><Plus size={16} />New task</a></div>
+     <div className="page-heading"><div><p className="eyebrow">Tuesday, October 15, 2024</p><h1>Good morning, {user?.name.split(' ')[0] || 'there'}<span className="heading-period">.</span></h1><p className="page-subtitle">Here’s the shape of your work today.</p></div><a href="/tasks" className="btn btn-primary" data-testid="link-add-task-overview"><Plus size={16} />New task</a></div>
     <section className="stat-grid">
       <StatCard label="Projects" value={summary?.projectCount ?? projects.length} detail="active workspaces" accent="gold" icon={FolderKanban} />
       <StatCard label="Open tasks" value={summary?.openTaskCount ?? 0} detail="across all projects" accent="teal" icon={ListTodo} />
@@ -273,17 +331,21 @@ function Router() {
   return (
     // Keep a shared shell (sidebar, navbar) outside the boundary so it
     // survives a page crash.
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/"><Shell><Overview /></Shell></Route>
-        <Route path="/projects"><Shell><ProjectsPage /></Shell></Route>
-        <Route path="/projects/:id"><Shell><ProjectDetailPage /></Shell></Route>
-        <Route path="/tasks"><Shell><TasksPage /></Shell></Route>
-        <Route path="/activity"><Shell><ActivityPage /></Shell></Route>
-        <Route path="/settings"><Shell><SettingsPage /></Shell></Route>
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
+    <AuthGate>
+      <RoutedErrorBoundary>
+        <Switch>
+          <Route path="/login"><AuthPage mode="login" /></Route>
+          <Route path="/register"><AuthPage mode="register" /></Route>
+          <Route path="/"><Shell><Overview /></Shell></Route>
+          <Route path="/projects"><Shell><ProjectsPage /></Shell></Route>
+          <Route path="/projects/:id"><Shell><ProjectDetailPage /></Shell></Route>
+          <Route path="/tasks"><Shell><TasksPage /></Shell></Route>
+          <Route path="/activity"><Shell><ActivityPage /></Shell></Route>
+          <Route path="/settings"><Shell><SettingsPage /></Shell></Route>
+          <Route component={NotFound} />
+        </Switch>
+      </RoutedErrorBoundary>
+    </AuthGate>
   );
 }
 

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.api.dependencies import get_current_user
+from backend.db.models import User
 from backend.db.session import get_db
 from backend.schemas.dashboard import ActivityRead, DashboardSummary
 from backend.services.dashboard import DashboardService
@@ -10,10 +12,14 @@ service = DashboardService()
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)
-def get_dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummary:
+def get_dashboard_summary(
+    _user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> DashboardSummary:
     return service.summary(db)
 
 
 @router.get("/activity", response_model=list[ActivityRead])
-def list_activity(db: Session = Depends(get_db)) -> list[ActivityRead]:
+def list_activity(
+    _user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[ActivityRead]:
     return service.activity(db)

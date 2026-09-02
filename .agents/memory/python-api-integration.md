@@ -14,3 +14,9 @@ OpenAPI `integer` schemas can cause Orval to emit `z.int()`, which is incompatib
 **Why:** Codegen completes but the library typecheck fails on the generated validator API.
 
 **How to apply:** Use the workspace-supported numeric schema type in the OpenAPI contract unless the validator dependency is intentionally upgraded alongside generated output.
+
+Cookie-backed sessions must account for the transport used by the development preview: browsers reject a `Secure` cookie delivered over plain HTTP.
+
+**Why:** Replit’s internal preview can be served through an HTTP localhost proxy even when the eventual published app is HTTPS; unconditional `Secure` cookies make the login appear not to persist locally.
+
+**How to apply:** Keep `HttpOnly` and `SameSite=Lax` everywhere, enable `Secure` when the request is HTTPS and the production setting allows it, and document the local HTTP exception.

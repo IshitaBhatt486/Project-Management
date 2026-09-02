@@ -43,6 +43,19 @@ Set `DATABASE_URL` to a PostgreSQL connection string. The backend also accepts:
 - `CORS_ORIGINS` (optional, as a JSON list when using a `.env` file)
 
 The backend normalizes provider URLs that begin with `postgres://` or `postgresql://` to the installed `psycopg` v3 driver.
+Session cookies are HttpOnly and SameSite=Lax. The Secure flag is enabled for HTTPS requests when `SESSION_COOKIE_SECURE=true`; plain HTTP development previews omit only that flag so browsers can accept the session locally.
+
+## Authentication
+
+Authentication is implemented with bcrypt password hashes and signed JWTs stored in the `workbench_session` HttpOnly cookie.
+
+- `POST /api/auth/register` creates an account and starts a session
+- `POST /api/auth/login` verifies credentials and starts a session
+- `GET /api/auth/me` restores the current session
+- `POST /api/auth/logout` clears the session cookie
+- Project, task, dashboard, and activity endpoints require an authenticated session
+
+Use a long, private `SESSION_SECRET` in every non-development environment. Passwords and JWTs are never returned to the frontend or stored in browser storage.
 
 ## Local setup
 

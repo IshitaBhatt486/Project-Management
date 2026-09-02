@@ -5,6 +5,36 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string;
+}
+
+export interface RegisterInput {
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  name: string;
+  email: string;
+  /**
+     * @minLength 8
+     * @maxLength 72
+     */
+  password: string;
+}
+
+export interface LoginInput {
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 72
+     */
+  password: string;
+}
+
 export interface HealthStatus {
   status: string;
 }

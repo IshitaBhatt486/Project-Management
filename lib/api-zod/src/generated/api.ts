@@ -9,6 +9,68 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Register a new account
+ */
+export const registerBodyNameMin = 2;
+export const registerBodyNameMax = 120;
+
+export const registerBodyPasswordMin = 8;
+export const registerBodyPasswordMax = 72;
+
+
+
+export const RegisterBody = zod.object({
+  "name": zod.string().min(registerBodyNameMin).max(registerBodyNameMax),
+  "email": zod.string(),
+  "password": zod.string().min(registerBodyPasswordMin).max(registerBodyPasswordMax)
+})
+
+export const RegisterResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Start an authenticated session
+ */
+export const loginBodyPasswordMax = 72;
+
+
+
+export const LoginBody = zod.object({
+  "email": zod.string(),
+  "password": zod.string().min(1).max(loginBodyPasswordMax)
+})
+
+export const LoginResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary End the current session
+ */
+export const LogoutResponse = zod.void()
+
+
+/**
+ * @summary Get the current authenticated account
+ */
+export const GetCurrentUserResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * Returns server health status
  * @summary Health check
  */
