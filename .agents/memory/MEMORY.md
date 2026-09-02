@@ -1,0 +1,1 @@
+- [Python API integration](python-api-integration.md) — normalize provider Postgres URLs and keep generated numeric schemas compatible with the workspace validator.
