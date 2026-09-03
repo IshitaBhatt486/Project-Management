@@ -5,10 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProjectStatus } from './projectStatus';
 
 export interface ProjectUpdate {
   /** @minLength 1 */
   name?: string;
+  /** @maxLength 1000 */
   description?: string;
   color?: string;
+  status?: ProjectStatus;
 }

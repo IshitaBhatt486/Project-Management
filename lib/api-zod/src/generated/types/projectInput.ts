@@ -5,12 +5,18 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProjectInputStatus } from './projectInputStatus';
 
 export interface ProjectInput {
   /** @minLength 1 */
   name: string;
-  /** @minLength 1 */
-  key: string;
+  /**
+     * @minLength 1
+     * @maxLength 12
+     */
+  key?: string;
+  /** @maxLength 1000 */
   description?: string;
   color?: string;
+  status?: ProjectInputStatus;
 }

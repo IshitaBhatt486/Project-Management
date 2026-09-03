@@ -1,1 +1,2 @@
 - [Python API integration](python-api-integration.md) — normalize provider Postgres URLs and keep generated numeric schemas compatible with the workspace validator.
+- [Generated client HMR](generated-client-hmr.md) — Orval cleans and recreates generated files, so Vite may briefly report missing imports during codegen until the next refresh.

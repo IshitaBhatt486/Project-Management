@@ -32,8 +32,11 @@ class DashboardService:
             overdue_task_count=overdue_count,
         )
 
-    def activity(self, db: Session) -> list[ActivityRead]:
-        rows = db.scalars(
-            select(Activity).order_by(Activity.created_at.desc()).limit(20)
-        )
+    def activity(
+        self, db: Session, project_name: str | None = None
+    ) -> list[ActivityRead]:
+        query = select(Activity)
+        if project_name:
+            query = query.where(Activity.project_name == project_name)
+        rows = db.scalars(query.order_by(Activity.created_at.desc()).limit(20))
         return [ActivityRead.model_validate(row) for row in rows]

@@ -23,10 +23,16 @@ import type {
   Activity,
   DashboardSummary,
   HealthStatus,
+  ListActivityParams,
+  ListProjectsParams,
   ListTasksParams,
   LoginInput,
+  Member,
+  MemberInvite,
+  MemberRoleUpdate,
   Project,
   ProjectInput,
+  ProjectList,
   ProjectUpdate,
   RegisterInput,
   Task,
@@ -430,20 +436,27 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
-export const getListProjectsUrl = () => {
+export const getListProjectsUrl = (params?: ListProjectsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/projects`
+  return stringifiedParams.length > 0 ? `/api/projects?${stringifiedParams}` : `/api/projects`
 }
 
 /**
- * @summary List projects
+ * @summary List owned projects
  */
-export const listProjects = async ( options?: Parameters<typeof customFetch>[1]): Promise<Project[]> => {
+export const listProjects = async (params?: ListProjectsParams, options?: Parameters<typeof customFetch>[1]): Promise<ProjectList> => {
 
-  return customFetch<Project[]>(getListProjectsUrl(),
+  return customFetch<ProjectList>(getListProjectsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -456,23 +469,23 @@ export const listProjects = async ( options?: Parameters<typeof customFetch>[1])
 
 
 
-export const getListProjectsQueryKey = () => {
+export const getListProjectsQueryKey = (params?: ListProjectsParams,) => {
     return [
-    `/api/projects`
+    `/api/projects`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorType<unknown>>(params?: ListProjectsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListProjectsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListProjectsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjects>>> = ({ signal }) => listProjects({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjects>>> = ({ signal }) => listProjects(params, { signal, ...requestOptions });
 
 
 
@@ -486,15 +499,15 @@ export type ListProjectsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List projects
+ * @summary List owned projects
  */
 
 export function useListProjects<TData = Awaited<ReturnType<typeof listProjects>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListProjectsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListProjectsQueryOptions(options)
+  const queryOptions = getListProjectsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -664,7 +677,7 @@ export const getUpdateProjectUrl = (projectId: number,) => {
 }
 
 /**
- * @summary Update a project
+ * @summary Update an owned project
  */
 export const updateProject = async (projectId: number,
     projectUpdate: ProjectUpdate, options?: Parameters<typeof customFetch>[1]): Promise<Project> => {
@@ -714,7 +727,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateProjectMutationError = ErrorType<void>
 
     /**
- * @summary Update a project
+ * @summary Update an owned project
  */
 export const useUpdateProject = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProject>>, TError,{projectId: number;data: BodyType<ProjectUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -725,6 +738,444 @@ export const useUpdateProject = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateProjectMutationOptions(options));
+    }
+
+export const getArchiveProjectUrl = (projectId: number,) => {
+
+
+
+
+  return `/api/projects/${projectId}/archive`
+}
+
+/**
+ * @summary Archive an owned project
+ */
+export const archiveProject = async (projectId: number, options?: Parameters<typeof customFetch>[1]): Promise<Project> => {
+
+  return customFetch<Project>(getArchiveProjectUrl(projectId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getArchiveProjectMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveProject>>, TError,{projectId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveProject>>, TError,{projectId: number}, TContext> => {
+
+const mutationKey = ['archiveProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveProject>>, {projectId: number}> = (props) => {
+          const {projectId} = props ?? {};
+
+          return  archiveProject(projectId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveProjectMutationResult = NonNullable<Awaited<ReturnType<typeof archiveProject>>>
+
+    export type ArchiveProjectMutationError = ErrorType<void>
+
+    /**
+ * @summary Archive an owned project
+ */
+export const useArchiveProject = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveProject>>, TError,{projectId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveProject>>,
+        TError,
+        {projectId: number},
+        TContext
+      > => {
+      return useMutation(getArchiveProjectMutationOptions(options));
+    }
+
+export const getDeleteProjectUrl = (projectId: number,) => {
+
+
+
+
+  return `/api/projects/${projectId}/delete`
+}
+
+/**
+ * @summary Delete an owned project
+ */
+export const deleteProject = async (projectId: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteProjectUrl(projectId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteProjectMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{projectId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{projectId: number}, TContext> => {
+
+const mutationKey = ['deleteProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteProject>>, {projectId: number}> = (props) => {
+          const {projectId} = props ?? {};
+
+          return  deleteProject(projectId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deleteProject>>>
+
+    export type DeleteProjectMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete an owned project
+ */
+export const useDeleteProject = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteProject>>, TError,{projectId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteProject>>,
+        TError,
+        {projectId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteProjectMutationOptions(options));
+    }
+
+export const getListProjectMembersUrl = (projectId: number,) => {
+
+
+
+
+  return `/api/projects/${projectId}/members`
+}
+
+/**
+ * @summary List project members
+ */
+export const listProjectMembers = async (projectId: number, options?: Parameters<typeof customFetch>[1]): Promise<Member[]> => {
+
+  return customFetch<Member[]>(getListProjectMembersUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProjectMembersQueryKey = (projectId: number,) => {
+    return [
+    `/api/projects/${projectId}/members`
+    ] as const;
+    }
+
+
+export const getListProjectMembersQueryOptions = <TData = Awaited<ReturnType<typeof listProjectMembers>>, TError = ErrorType<void>>(projectId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjectMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProjectMembersQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectMembers>>> = ({ signal }) => listProjectMembers(projectId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjectMembers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProjectMembersQueryResult = NonNullable<Awaited<ReturnType<typeof listProjectMembers>>>
+export type ListProjectMembersQueryError = ErrorType<void>
+
+
+/**
+ * @summary List project members
+ */
+
+export function useListProjectMembers<TData = Awaited<ReturnType<typeof listProjectMembers>>, TError = ErrorType<void>>(
+ projectId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjectMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProjectMembersQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getInviteProjectMemberUrl = (projectId: number,) => {
+
+
+
+
+  return `/api/projects/${projectId}/members`
+}
+
+/**
+ * @summary Invite a registered user to a project
+ */
+export const inviteProjectMember = async (projectId: number,
+    memberInvite: MemberInvite, options?: Parameters<typeof customFetch>[1]): Promise<Member> => {
+
+  return customFetch<Member>(getInviteProjectMemberUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(memberInvite)
+  }
+);}
+
+
+
+
+
+export const getInviteProjectMemberMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteProjectMember>>, TError,{projectId: number;data: BodyType<MemberInvite>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof inviteProjectMember>>, TError,{projectId: number;data: BodyType<MemberInvite>}, TContext> => {
+
+const mutationKey = ['inviteProjectMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof inviteProjectMember>>, {projectId: number;data: BodyType<MemberInvite>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  inviteProjectMember(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InviteProjectMemberMutationResult = NonNullable<Awaited<ReturnType<typeof inviteProjectMember>>>
+    export type InviteProjectMemberMutationBody = BodyType<MemberInvite>
+    export type InviteProjectMemberMutationError = ErrorType<void>
+
+    /**
+ * @summary Invite a registered user to a project
+ */
+export const useInviteProjectMember = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteProjectMember>>, TError,{projectId: number;data: BodyType<MemberInvite>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof inviteProjectMember>>,
+        TError,
+        {projectId: number;data: BodyType<MemberInvite>},
+        TContext
+      > => {
+      return useMutation(getInviteProjectMemberMutationOptions(options));
+    }
+
+export const getChangeProjectMemberRoleUrl = (projectId: number,
+    memberId: number,) => {
+
+
+
+
+  return `/api/projects/${projectId}/members/${memberId}`
+}
+
+/**
+ * @summary Change a project member role
+ */
+export const changeProjectMemberRole = async (projectId: number,
+    memberId: number,
+    memberRoleUpdate: MemberRoleUpdate, options?: Parameters<typeof customFetch>[1]): Promise<Member> => {
+
+  return customFetch<Member>(getChangeProjectMemberRoleUrl(projectId,memberId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(memberRoleUpdate)
+  }
+);}
+
+
+
+
+
+export const getChangeProjectMemberRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeProjectMemberRole>>, TError,{projectId: number;memberId: number;data: BodyType<MemberRoleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof changeProjectMemberRole>>, TError,{projectId: number;memberId: number;data: BodyType<MemberRoleUpdate>}, TContext> => {
+
+const mutationKey = ['changeProjectMemberRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof changeProjectMemberRole>>, {projectId: number;memberId: number;data: BodyType<MemberRoleUpdate>}> = (props) => {
+          const {projectId,memberId,data} = props ?? {};
+
+          return  changeProjectMemberRole(projectId,memberId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ChangeProjectMemberRoleMutationResult = NonNullable<Awaited<ReturnType<typeof changeProjectMemberRole>>>
+    export type ChangeProjectMemberRoleMutationBody = BodyType<MemberRoleUpdate>
+    export type ChangeProjectMemberRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Change a project member role
+ */
+export const useChangeProjectMemberRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeProjectMemberRole>>, TError,{projectId: number;memberId: number;data: BodyType<MemberRoleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof changeProjectMemberRole>>,
+        TError,
+        {projectId: number;memberId: number;data: BodyType<MemberRoleUpdate>},
+        TContext
+      > => {
+      return useMutation(getChangeProjectMemberRoleMutationOptions(options));
+    }
+
+export const getRemoveProjectMemberUrl = (projectId: number,
+    memberId: number,) => {
+
+
+
+
+  return `/api/projects/${projectId}/members/${memberId}`
+}
+
+/**
+ * @summary Remove a project member
+ */
+export const removeProjectMember = async (projectId: number,
+    memberId: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveProjectMemberUrl(projectId,memberId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveProjectMemberMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeProjectMember>>, TError,{projectId: number;memberId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeProjectMember>>, TError,{projectId: number;memberId: number}, TContext> => {
+
+const mutationKey = ['removeProjectMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeProjectMember>>, {projectId: number;memberId: number}> = (props) => {
+          const {projectId,memberId} = props ?? {};
+
+          return  removeProjectMember(projectId,memberId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveProjectMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeProjectMember>>>
+
+    export type RemoveProjectMemberMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove a project member
+ */
+export const useRemoveProjectMember = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeProjectMember>>, TError,{projectId: number;memberId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeProjectMember>>,
+        TError,
+        {projectId: number;memberId: number},
+        TContext
+      > => {
+      return useMutation(getRemoveProjectMemberMutationOptions(options));
     }
 
 export const getListTasksUrl = (params?: ListTasksParams,) => {
@@ -1102,20 +1553,27 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
 
 
 
-export const getListActivityUrl = () => {
+export const getListActivityUrl = (params?: ListActivityParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/activity`
+  return stringifiedParams.length > 0 ? `/api/activity?${stringifiedParams}` : `/api/activity`
 }
 
 /**
  * @summary List recent workspace activity
  */
-export const listActivity = async ( options?: Parameters<typeof customFetch>[1]): Promise<Activity[]> => {
+export const listActivity = async (params?: ListActivityParams, options?: Parameters<typeof customFetch>[1]): Promise<Activity[]> => {
 
-  return customFetch<Activity[]>(getListActivityUrl(),
+  return customFetch<Activity[]>(getListActivityUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1128,23 +1586,23 @@ export const listActivity = async ( options?: Parameters<typeof customFetch>[1])
 
 
 
-export const getListActivityQueryKey = () => {
+export const getListActivityQueryKey = (params?: ListActivityParams,) => {
     return [
-    `/api/activity`
+    `/api/activity`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListActivityQueryOptions = <TData = Awaited<ReturnType<typeof listActivity>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListActivityQueryOptions = <TData = Awaited<ReturnType<typeof listActivity>>, TError = ErrorType<unknown>>(params?: ListActivityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListActivityQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListActivityQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listActivity>>> = ({ signal }) => listActivity({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listActivity>>> = ({ signal }) => listActivity(params, { signal, ...requestOptions });
 
 
 
@@ -1162,11 +1620,11 @@ export type ListActivityQueryError = ErrorType<unknown>
  */
 
 export function useListActivity<TData = Awaited<ReturnType<typeof listActivity>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListActivityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListActivityQueryOptions(options)
+  const queryOptions = getListActivityQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

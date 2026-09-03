@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProjectStatus } from './projectStatus';
 
 export interface Project {
   id: number;
@@ -12,6 +13,10 @@ export interface Project {
   key: string;
   description: string;
   color: string;
+  ownerId: number | null;
+  status: ProjectStatus;
+  createdAt: Date;
+  updatedAt: Date;
   taskCount: number;
   completedTaskCount: number;
 }

@@ -18,6 +18,8 @@ tags:
     description: Task management operations
   - name: dashboard
     description: Workspace overview operations
+  - name: members
+    description: Project membership operations
 paths:
   /auth/register:
     post:
@@ -98,16 +100,41 @@ paths:
     get:
       operationId: listProjects
       tags: [projects]
-      summary: List projects
+      summary: List owned projects
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 50
+            default: 12
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProjectStatus"
       responses:
         "200":
-          description: Projects
+          description: Paginated projects
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Project"
+                $ref: "#/components/schemas/ProjectList"
     post:
       operationId: createProject
       tags: [projects]
@@ -144,7 +171,7 @@ paths:
     patch:
       operationId: updateProject
       tags: [projects]
-      summary: Update a project
+      summary: Update an owned project
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       requestBody:
@@ -162,6 +189,116 @@ paths:
                 $ref: "#/components/schemas/Project"
         "404":
           description: Project not found
+  /projects/{projectId}/archive:
+    post:
+      operationId: archiveProject
+      tags: [projects]
+      summary: Archive an owned project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Archived project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Project not found
+  /projects/{projectId}/delete:
+    post:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete an owned project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "204":
+          description: Project deleted
+        "404":
+          description: Project not found
+  /projects/{projectId}/members:
+    get:
+      operationId: listProjectMembers
+      tags: [members]
+      summary: List project members
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Member"
+        "404":
+          description: Project not found
+    post:
+      operationId: inviteProjectMember
+      tags: [members]
+      summary: Invite a registered user to a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberInvite"
+      responses:
+        "201":
+          description: Added project member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "403":
+          description: Insufficient project role
+        "404":
+          description: User or project not found
+        "409":
+          description: User is already a member
+  /projects/{projectId}/members/{memberId}:
+    patch:
+      operationId: changeProjectMemberRole
+      tags: [members]
+      summary: Change a project member role
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberRoleUpdate"
+      responses:
+        "200":
+          description: Updated project member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "403":
+          description: Only the owner can change roles
+        "404":
+          description: Project or member not found
+    delete:
+      operationId: removeProjectMember
+      tags: [members]
+      summary: Remove a project member
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/MemberId"
+      responses:
+        "204":
+          description: Removed project member
+        "403":
+          description: Only the owner can remove members
+        "404":
+          description: Project or member not found
   /tasks:
     get:
       operationId: listTasks
@@ -255,6 +392,13 @@ paths:
       operationId: listActivity
       tags: [dashboard]
       summary: List recent workspace activity
+      parameters:
+        - name: projectName
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
       responses:
         "200":
           description: Recent activity
@@ -274,6 +418,12 @@ components:
         type: number
     TaskId:
       name: taskId
+      in: path
+      required: true
+      schema:
+        type: number
+    MemberId:
+      name: memberId
       in: path
       required: true
       schema:
@@ -325,7 +475,7 @@ components:
         - status
     Project:
       type: object
-      required: [id, name, key, description, color, taskCount, completedTaskCount]
+      required: [id, name, key, description, color, ownerId, status, createdAt, updatedAt, taskCount, completedTaskCount]
       properties:
         id:
           type: number
@@ -337,13 +487,76 @@ components:
           type: string
         color:
           type: string
+        ownerId:
+          type: number
+          nullable: true
+        status:
+          $ref: "#/components/schemas/ProjectStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
         taskCount:
           type: number
         completedTaskCount:
           type: number
+    ProjectStatus:
+      type: string
+      enum: [active, on_hold, completed, archived]
+    MemberRole:
+      type: string
+      enum: [owner, admin, member, viewer]
+    Member:
+      type: object
+      required: [id, projectId, userId, name, email, role]
+      properties:
+        id:
+          type: number
+        projectId:
+          type: number
+        userId:
+          type: number
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          $ref: "#/components/schemas/MemberRole"
+    MemberInvite:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, member, viewer]
+    MemberRoleUpdate:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [admin, member, viewer]
+    ProjectList:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        total:
+          type: number
+        page:
+          type: number
+        pageSize:
+          type: number
     ProjectInput:
       type: object
-      required: [name, key]
+      required: [name]
       properties:
         name:
           type: string
@@ -351,10 +564,15 @@ components:
         key:
           type: string
           minLength: 1
+          maxLength: 12
         description:
           type: string
+          maxLength: 1000
         color:
           type: string
+        status:
+          type: string
+          enum: [active, on_hold, completed]
     ProjectUpdate:
       type: object
       properties:
@@ -363,8 +581,11 @@ components:
           minLength: 1
         description:
           type: string
+          maxLength: 1000
         color:
           type: string
+        status:
+          $ref: "#/components/schemas/ProjectStatus"
     Task:
       type: object
       required: [id, projectId, title, description, status, priority, assignee, dueDate]

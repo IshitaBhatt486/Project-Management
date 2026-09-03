@@ -80,32 +80,60 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * @summary List projects
+ * @summary List owned projects
  */
-export const ListProjectsResponseItem = zod.object({
+export const listProjectsQuerySearchMax = 120;
+
+export const listProjectsQueryPageDefault = 1;
+
+export const listProjectsQueryPageSizeDefault = 12;
+export const listProjectsQueryPageSizeMax = 50;
+
+
+
+export const ListProjectsQueryParams = zod.object({
+  "search": zod.coerce.string().max(listProjectsQuerySearchMax).optional(),
+  "page": zod.coerce.number().min(1).default(listProjectsQueryPageDefault),
+  "pageSize": zod.coerce.number().min(1).max(listProjectsQueryPageSizeMax).default(listProjectsQueryPageSizeDefault),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']).optional()
+})
+
+export const ListProjectsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "key": zod.string(),
   "description": zod.string(),
   "color": zod.string(),
+  "ownerId": zod.number().nullable(),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
   "taskCount": zod.number(),
   "completedTaskCount": zod.number()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number()
 })
-export const ListProjectsResponse = zod.array(ListProjectsResponseItem)
 
 
 /**
  * @summary Create a project
  */
 
+export const createProjectBodyKeyMax = 12;
+
+export const createProjectBodyDescriptionMax = 1000;
 
 
 
 export const CreateProjectBody = zod.object({
   "name": zod.string().min(1),
-  "key": zod.string().min(1),
-  "description": zod.string().optional(),
-  "color": zod.string().optional()
+  "key": zod.string().min(1).max(createProjectBodyKeyMax).optional(),
+  "description": zod.string().max(createProjectBodyDescriptionMax).optional(),
+  "color": zod.string().optional(),
+  "status": zod.enum(['active', 'on_hold', 'completed']).optional()
 })
 
 export const CreateProjectResponse = zod.object({
@@ -114,6 +142,10 @@ export const CreateProjectResponse = zod.object({
   "key": zod.string(),
   "description": zod.string(),
   "color": zod.string(),
+  "ownerId": zod.number().nullable(),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
   "taskCount": zod.number(),
   "completedTaskCount": zod.number()
 })
@@ -132,25 +164,32 @@ export const GetProjectResponse = zod.object({
   "key": zod.string(),
   "description": zod.string(),
   "color": zod.string(),
+  "ownerId": zod.number().nullable(),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
   "taskCount": zod.number(),
   "completedTaskCount": zod.number()
 })
 
 
 /**
- * @summary Update a project
+ * @summary Update an owned project
  */
 export const UpdateProjectParams = zod.object({
   "projectId": zod.coerce.number()
 })
 
 
+export const updateProjectBodyDescriptionMax = 1000;
+
 
 
 export const UpdateProjectBody = zod.object({
   "name": zod.string().min(1).optional(),
-  "description": zod.string().optional(),
-  "color": zod.string().optional()
+  "description": zod.string().max(updateProjectBodyDescriptionMax).optional(),
+  "color": zod.string().optional(),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']).optional()
 })
 
 export const UpdateProjectResponse = zod.object({
@@ -159,9 +198,118 @@ export const UpdateProjectResponse = zod.object({
   "key": zod.string(),
   "description": zod.string(),
   "color": zod.string(),
+  "ownerId": zod.number().nullable(),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
   "taskCount": zod.number(),
   "completedTaskCount": zod.number()
 })
+
+
+/**
+ * @summary Archive an owned project
+ */
+export const ArchiveProjectParams = zod.object({
+  "projectId": zod.coerce.number()
+})
+
+export const ArchiveProjectResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "key": zod.string(),
+  "description": zod.string(),
+  "color": zod.string(),
+  "ownerId": zod.number().nullable(),
+  "status": zod.enum(['active', 'on_hold', 'completed', 'archived']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "taskCount": zod.number(),
+  "completedTaskCount": zod.number()
+})
+
+
+/**
+ * @summary Delete an owned project
+ */
+export const DeleteProjectParams = zod.object({
+  "projectId": zod.coerce.number()
+})
+
+export const DeleteProjectResponse = zod.void()
+
+
+/**
+ * @summary List project members
+ */
+export const ListProjectMembersParams = zod.object({
+  "projectId": zod.coerce.number()
+})
+
+export const ListProjectMembersResponseItem = zod.object({
+  "id": zod.number(),
+  "projectId": zod.number(),
+  "userId": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['owner', 'admin', 'member', 'viewer'])
+})
+export const ListProjectMembersResponse = zod.array(ListProjectMembersResponseItem)
+
+
+/**
+ * @summary Invite a registered user to a project
+ */
+export const InviteProjectMemberParams = zod.object({
+  "projectId": zod.coerce.number()
+})
+
+export const InviteProjectMemberBody = zod.object({
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'member', 'viewer'])
+})
+
+export const InviteProjectMemberResponse = zod.object({
+  "id": zod.number(),
+  "projectId": zod.number(),
+  "userId": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['owner', 'admin', 'member', 'viewer'])
+})
+
+
+/**
+ * @summary Change a project member role
+ */
+export const ChangeProjectMemberRoleParams = zod.object({
+  "projectId": zod.coerce.number(),
+  "memberId": zod.coerce.number()
+})
+
+export const ChangeProjectMemberRoleBody = zod.object({
+  "role": zod.enum(['admin', 'member', 'viewer'])
+})
+
+export const ChangeProjectMemberRoleResponse = zod.object({
+  "id": zod.number(),
+  "projectId": zod.number(),
+  "userId": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['owner', 'admin', 'member', 'viewer'])
+})
+
+
+/**
+ * @summary Remove a project member
+ */
+export const RemoveProjectMemberParams = zod.object({
+  "projectId": zod.coerce.number(),
+  "memberId": zod.coerce.number()
+})
+
+export const RemoveProjectMemberResponse = zod.void()
 
 
 /**
@@ -269,6 +417,14 @@ export const GetDashboardSummaryResponse = zod.object({
 /**
  * @summary List recent workspace activity
  */
+export const listActivityQueryProjectNameMax = 120;
+
+
+
+export const ListActivityQueryParams = zod.object({
+  "projectName": zod.coerce.string().max(listActivityQueryProjectNameMax).optional()
+})
+
 export const ListActivityResponseItem = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['task_created', 'task_completed', 'project_created', 'task_updated']),

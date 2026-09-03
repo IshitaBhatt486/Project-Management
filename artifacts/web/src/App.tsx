@@ -8,6 +8,7 @@ import {
   Activity as ActivityIcon,
   ArrowDown,
   ArrowUpRight,
+  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -19,6 +20,7 @@ import {
   ListTodo,
   LogOut,
   Menu,
+  Mail,
   Moon,
   MoreHorizontal,
   Pencil,
@@ -26,10 +28,13 @@ import {
   RotateCcw,
   Search,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Sun,
   Target,
   Trash2,
+  UserPlus,
+  Users,
   X,
   Zap,
 } from 'lucide-react';
@@ -38,21 +43,27 @@ import {
   getGetProjectQueryKey,
   getHealthCheckQueryKey,
   getListActivityQueryKey,
+  getListProjectMembersQueryKey,
   getListProjectsQueryKey,
   getListTasksQueryKey,
   useCreateProject,
   useCreateTask,
+  useChangeProjectMemberRole,
   useDeleteTask,
   useGetDashboardSummary,
   useGetProject,
   useHealthCheck,
+  useInviteProjectMember,
+  useListProjectMembers,
   useListActivity,
   useListProjects,
   useListTasks,
+  useRemoveProjectMember,
   useLogout,
   useUpdateProject,
   useUpdateTask,
   type Activity,
+  type Member,
   type Project,
   type Task,
   type TaskPriority,
@@ -71,9 +82,9 @@ import {
 
 const queryClient = new QueryClient();
 
-const statusLabels: Record<string, string> = { backlog: 'Backlog', todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done' };
+const statusLabels: Record<string, string> = { backlog: 'Backlog', todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done', active: 'Active', on_hold: 'On hold', completed: 'Completed', archived: 'Archived' };
 const priorityLabels: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
-const statusColors: Record<string, string> = { backlog: 'slate', todo: 'blue', in_progress: 'amber', in_review: 'violet', done: 'teal' };
+const statusColors: Record<string, string> = { backlog: 'slate', todo: 'blue', in_progress: 'amber', in_review: 'violet', done: 'teal', active: 'teal', on_hold: 'amber', completed: 'blue', archived: 'slate' };
 const projectColors = ['#d79b39', '#478477', '#c56b55', '#7389ae', '#aa7a9b'];
 
 function cx(...parts: Array<string | false | null | undefined>) { return parts.filter(Boolean).join(' '); }
@@ -82,6 +93,12 @@ function formatDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(date);
+}
+function formatLongDate(value?: string | null) {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 }
 function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || '—'; }
 function isOverdue(value?: string | null) { return !!value && new Date(value).getTime() < Date.now(); }
@@ -227,7 +244,7 @@ function Overview() {
   const activityQuery = useListActivity();
   useHealthCheck({ query: { staleTime: 30000, queryKey: getHealthCheckQueryKey() } });
   const summary = summaryQuery.data;
-  const projects = projectsQuery.data || [];
+  const projects = projectsQuery.data?.items || [];
   const tasks = tasksQuery.data || [];
   const recentTasks = tasks.slice().sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done')).slice(0, 5);
   const completion = summary && summary.openTaskCount + summary.completedTaskCount > 0 ? Math.round((summary.completedTaskCount / (summary.openTaskCount + summary.completedTaskCount)) * 100) : 0;
@@ -254,8 +271,8 @@ function Overview() {
   </div>;
 }
 
-function ActivityFeed({ activities, loading }: { activities: Activity[]; loading?: boolean }) {
-  return <section className="panel activity-panel"><div className="panel-header"><div><p className="eyebrow">Latest signals</p><h2>Recent activity</h2></div><a href="/activity" className="text-link" data-testid="link-view-activity">See all <ArrowUpRight size={14} /></a></div>{loading ? <div className="activity-skeleton"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : activities.length ? <div className="activity-list">{activities.map((item) => <ActivityItem key={item.id} activity={item} />)}</div> : <EmptyState title="The room is quiet" description="Updates from your team will gather here." />}</section>;
+function ActivityFeed({ activities, loading, error, retry, scoped }: { activities: Activity[]; loading?: boolean; error?: boolean; retry?: () => void; scoped?: boolean }) {
+  return <section className="panel activity-panel"><div className="panel-header"><div><p className="eyebrow">{scoped ? 'Latest actions' : 'Latest signals'}</p><h2>{scoped ? 'Recent movement' : 'Recent activity'}</h2></div><a href="/activity" className="text-link" data-testid="link-view-activity">See all <ArrowUpRight size={14} /></a></div>{loading ? <div className="activity-skeleton"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : error ? <ErrorState label="Activity could not be loaded." onRetry={retry} /> : activities.length ? <div className="activity-list" data-testid={scoped ? 'feed-project-activity' : 'feed-activity'}>{activities.map((item) => <ActivityItem key={item.id} activity={item} />)}</div> : <EmptyState title="The room is quiet" description={scoped ? 'Updates for this project will gather here.' : 'Updates from your team will gather here.'} />}</section>;
 }
 function ActivityItem({ activity }: { activity: Activity }) {
   const icon = activity.kind === 'task_completed' ? <CheckCircle2 size={16} /> : activity.kind === 'project_created' ? <FolderKanban size={16} /> : activity.kind === 'task_created' ? <Plus size={16} /> : <Pencil size={16} />;
@@ -270,7 +287,7 @@ function ProjectsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ name: '', key: '', description: '', color: projectColors[0] });
-  const projects = (query.data || []).filter((p) => `${p.name} ${p.key}`.toLowerCase().includes(search.toLowerCase()));
+  const projects = (query.data?.items || []).filter((p) => `${p.name} ${p.key}`.toLowerCase().includes(search.toLowerCase()));
   const submit = (event: FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.key.trim()) return; create.mutate({ data: form }, { onSuccess: () => { setShowCreate(false); setForm({ name: '', key: '', description: '', color: projectColors[0] }); client.invalidateQueries({ queryKey: getListProjectsQueryKey() }); } }); };
   return <div className="content-stack"><div className="page-heading"><div><p className="eyebrow">Workspace / Projects</p><h1>Projects<span className="heading-period">.</span></h1><p className="page-subtitle">A small number of clear rooms beats a crowded hallway.</p></div><Button variant="primary" onClick={() => setShowCreate(true)} data-testid="button-new-project"><Plus size={16} />New project</Button></div>
     <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a project" data-testid="input-search-projects" /></div><span className="toolbar-count">{projects.length} project{projects.length === 1 ? '' : 's'}</span></div>
@@ -298,7 +315,7 @@ function TasksPage() {
   return <div className="content-stack"><div className="page-heading"><div><p className="eyebrow">Workspace / Tasks</p><h1>Tasks<span className="heading-period">.</span></h1><p className="page-subtitle">The next useful thing, made visible.</p></div><Button variant="primary" onClick={() => setShowCreate(true)} data-testid="button-new-task"><Plus size={16} />New task</Button></div>
     <div className="filter-toolbar"><div className="filter-group"><span className="filter-label">Status</span>{(['all', 'backlog', 'todo', 'in_progress', 'in_review', 'done'] as const).map((status) => <button key={status} className={cx('filter-chip', statusFilter === status && 'filter-chip-active')} onClick={() => setStatusFilter(status)} data-testid={`button-filter-${status}`}>{status === 'all' ? 'All' : statusLabels[status]}</button>)}</div><label className="select-wrap"><span>Priority</span><select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as 'all' | TaskPriority)} data-testid="select-filter-priority"><option value="all">All priorities</option>{Object.entries(priorityLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><ChevronDown size={14} /></label></div>
     {query.isLoading ? <LoadingState label="Gathering your tasks" /> : query.isError ? <ErrorState onRetry={() => query.refetch()} /> : tasks.length ? <section className="panel task-table"><div className="task-table-head"><span>Task</span><span>Status</span><span>Priority</span><span>Owner</span><span>Due</span><span /></div>{tasks.map((task) => <TaskRow key={task.id} task={task} onEdit={setEditing} onDelete={setDeleting} onStatus={changeStatus} />)}</section> : <EmptyState title="A clean slate" description="There are no tasks in this view. Add the next step to get moving." action={<Button variant="primary" onClick={() => setShowCreate(true)} data-testid="button-create-empty-task"><Plus size={15} />Create a task</Button>} />}
-    {(showCreate || editing) && <TaskModal task={editing} projects={projectsQuery.data || []} onClose={() => { setShowCreate(false); setEditing(null); }} onSave={saveTask} pending={create.isPending || update.isPending} />}
+     {(showCreate || editing) && <TaskModal task={editing} projects={projectsQuery.data?.items || []} onClose={() => { setShowCreate(false); setEditing(null); }} onSave={saveTask} pending={create.isPending || update.isPending} />}
     {deleting && <ConfirmModal title="Delete this task?" description={`“${deleting.title}” will be removed from the workspace.`} onClose={() => setDeleting(null)} onConfirm={deleteTask} pending={remove.isPending} />}
   </div>;
 }
@@ -309,23 +326,149 @@ function TaskModal({ task, projects, onClose, onSave, pending }: { task: Task | 
 }
 
 function ProjectDetailPage() {
-  const params = useParams<{ id: string }>(); const id = Number(params.id); const client = useQueryClient();
+  const params = useParams<{ id: string }>();
+  const id = Number(params.id);
+  const client = useQueryClient();
+  const user = useAuthUser();
   const projectQuery = useGetProject(id, { query: { enabled: Number.isFinite(id), queryKey: getGetProjectQueryKey(id) } });
-  const tasksQuery = useListTasks({ projectId: id }); const update = useUpdateProject(); const updateTask = useUpdateTask();
-  const [editing, setEditing] = useState(false); const [showTask, setShowTask] = useState(false); const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const taskParams = Number.isFinite(id) ? { projectId: id } : undefined;
+  const tasksQuery = useListTasks(taskParams, { query: { enabled: Number.isFinite(id), queryKey: getListTasksQueryKey(taskParams) } });
+  const membersQuery = useListProjectMembers(id, { query: { enabled: Number.isFinite(id), queryKey: getListProjectMembersQueryKey(id) } });
+  const project = projectQuery.data;
+  const activityParams = project ? { projectName: project.name } : undefined;
+  const activityQuery = useListActivity(activityParams, { query: { enabled: !!project, queryKey: getListActivityQueryKey(activityParams) } });
+  const update = useUpdateProject();
+  const updateTask = useUpdateTask();
   const createTask = useCreateTask();
-  const project = projectQuery.data; const tasks = tasksQuery.data || [];
-  if (projectQuery.isLoading) return <LoadingState label="Opening project" />; if (projectQuery.isError || !project) return <ErrorState label="This project could not be found." onRetry={() => projectQuery.refetch()} />;
+  const invite = useInviteProjectMember();
+  const changeRole = useChangeProjectMemberRole();
+  const removeMember = useRemoveProjectMember();
+  const [editing, setEditing] = useState(false);
+  const [showTask, setShowTask] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ email: '', role: 'member' as 'admin' | 'member' | 'viewer' });
+  const [removing, setRemoving] = useState<Member | null>(null);
+
+  const tasks = tasksQuery.data || [];
+  const members = membersQuery.data || [];
+  const visibleActivity = activityQuery.data || [];
+  const currentMember = members.find((member) => member.userId === user?.id);
+  const currentRole = project?.ownerId === user?.id ? 'owner' : currentMember?.role || 'viewer';
+  const canInvite = currentRole === 'owner' || currentRole === 'admin';
+  const canManageMembers = currentRole === 'owner';
+  const canEditTasks = currentRole === 'owner' || currentRole === 'admin';
+
+  const invalidateProject = () => {
+    client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
+    client.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+    client.invalidateQueries({ queryKey: getListActivityQueryKey() });
+  };
+  const invalidateMembers = () => {
+    client.invalidateQueries({ queryKey: getListProjectMembersQueryKey(id) });
+    client.invalidateQueries({ queryKey: getListActivityQueryKey() });
+  };
+
+  if (!Number.isFinite(id)) return <ErrorState label="That project address is not valid." />;
+  if (projectQuery.isLoading) return <ProjectDetailLoading />;
+  if (projectQuery.isError || !project) return <ErrorState label="This project could not be found." onRetry={() => projectQuery.refetch()} />;
+
   const percent = project.taskCount ? Math.round(project.completedTaskCount / project.taskCount * 100) : 0;
-  return <div className="content-stack"><a href="/projects" className="back-link" data-testid="link-back-projects"><ArrowDown size={15} />Back to projects</a><div className="project-detail-heading"><div className="project-title-mark" style={{ backgroundColor: project.color }} /><div><p className="eyebrow font-mono-app">{project.key}</p><h1>{project.name}<span className="heading-period">.</span></h1><p className="page-subtitle">{project.description || 'A focused space for good work.'}</p></div><div className="heading-actions"><Button onClick={() => setEditing(true)} data-testid="button-edit-project"><Pencil size={15} />Edit project</Button><Button variant="primary" onClick={() => setShowTask(true)} data-testid="button-add-project-task"><Plus size={15} />Add task</Button></div></div><div className="detail-stats"><div><span>Progress</span><strong>{percent}%</strong></div><div><span>All tasks</span><strong>{project.taskCount}</strong></div><div><span>Completed</span><strong>{project.completedTaskCount}</strong></div><div><span>Open</span><strong>{Math.max(project.taskCount - project.completedTaskCount, 0)}</strong></div></div><section className="panel task-table"><div className="panel-header"><div><p className="eyebrow">Project tasks</p><h2>The work in this room</h2></div><span className="toolbar-count">{tasks.length} total</span></div>{tasksQuery.isLoading ? <LoadingState /> : tasks.length ? <div>{tasks.map((task) => <TaskRow key={task.id} task={task} onEdit={setEditingTask} onStatus={(item, status) => updateTask.mutate({ taskId: item.id, data: { status } }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); } })} />)}</div> : <EmptyState title="No tasks in this room" description="Add the first step and give the project somewhere to go." action={<Button variant="primary" onClick={() => setShowTask(true)} data-testid="button-create-project-task-empty"><Plus size={15} />Add task</Button>} />}</section>{editing && <ProjectEditModal project={project} onClose={() => setEditing(false)} onSave={(data) => update.mutate({ projectId: id, data }, { onSuccess: () => { setEditing(false); client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListProjectsQueryKey() }); } })} pending={update.isPending} />}{(showTask || editingTask) && <TaskModal task={editingTask} projects={[project]} onClose={() => { setShowTask(false); setEditingTask(null); }} onSave={(data) => editingTask ? updateTask.mutate({ taskId: editingTask.id, data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); setEditingTask(null); } }) : createTask.mutate({ data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); setShowTask(false); } })} pending={createTask.isPending || updateTask.isPending} />}</div>;
+  const submitInvite = (event: FormEvent) => {
+    event.preventDefault();
+    if (!inviteForm.email.trim()) return;
+    invite.mutate({ projectId: id, data: inviteForm }, {
+      onSuccess: () => {
+        setInviteForm({ email: '', role: 'member' });
+        setShowInvite(false);
+        invalidateMembers();
+      },
+    });
+  };
+  const changeMemberRole = (member: Member, role: 'admin' | 'member' | 'viewer') => {
+    changeRole.mutate({ projectId: id, memberId: member.id, data: { role } }, { onSuccess: invalidateMembers });
+  };
+  const confirmRemoveMember = () => {
+    if (!removing) return;
+    removeMember.mutate({ projectId: id, memberId: removing.id }, { onSuccess: () => { setRemoving(null); invalidateMembers(); } });
+  };
+  const changeTaskStatus = (task: Task, nextStatus: TaskStatus) => {
+    const taskQueryKey = getListTasksQueryKey({ projectId: id });
+    const previousTasks = client.getQueryData<Task[]>(taskQueryKey);
+    client.setQueryData<Task[]>(taskQueryKey, (current) => current?.map((item) => item.id === task.id ? { ...item, status: nextStatus } : item));
+    updateTask.mutate(
+      { taskId: task.id, data: { status: nextStatus } },
+      {
+        onError: () => client.setQueryData(taskQueryKey, previousTasks),
+        onSuccess: () => {
+          client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
+          client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) });
+          client.invalidateQueries({ queryKey: getListActivityQueryKey() });
+        },
+      },
+    );
+  };
+
+  return <div className="content-stack project-dashboard">
+    <a href="/projects" className="back-link" data-testid="link-back-projects"><ArrowDown size={15} />Back to projects</a>
+    <section className="project-hero">
+      <div className="project-detail-heading">
+        <div className="project-title-mark" style={{ backgroundColor: project.color || projectColors[project.id % projectColors.length] }} />
+        <div className="project-hero-copy">
+          <div className="project-kicker"><span className="eyebrow font-mono-app">{project.key}</span><StatusPill status={project.status} /></div>
+          <h1 data-testid={`text-project-name-${project.id}`}>{project.name}<span className="heading-period">.</span></h1>
+          <p className="page-subtitle">{project.description || 'A focused space for good work.'}</p>
+          <p className="project-created"><CalendarDays size={13} />Created {formatLongDate(project.createdAt)}</p>
+        </div>
+        <div className="heading-actions">
+          {canEditTasks && <Button onClick={() => setEditing(true)} data-testid="button-edit-project"><Pencil size={15} />Edit project</Button>}
+          {canEditTasks && <Button variant="primary" onClick={() => setShowTask(true)} data-testid="button-add-project-task"><Plus size={15} />Add task</Button>}
+        </div>
+      </div>
+    </section>
+    <div className="detail-stats project-overview-stats">
+      <div><span>Progress</span><strong data-testid={`text-project-progress-${id}`}>{percent}%</strong><small>{project.completedTaskCount} of {project.taskCount} complete</small></div>
+      <div><span>Team members</span><strong data-testid={`text-project-member-count-${id}`}>{membersQuery.isLoading ? '—' : members.length}</strong><small>people with a place in this room</small></div>
+      <div><span>Recent activity</span><strong data-testid={`text-project-activity-count-${id}`}>{activityQuery.isLoading ? '—' : visibleActivity.length}</strong><small>signals in the workspace trail</small></div>
+      <div><span>Open tasks</span><strong data-testid={`text-project-open-count-${id}`}>{Math.max(project.taskCount - project.completedTaskCount, 0)}</strong><small>still asking for attention</small></div>
+    </div>
+    <div className="project-dashboard-grid">
+      <section className="panel task-table project-tasks-panel">
+        <div className="panel-header"><div><p className="eyebrow">Project tasks</p><h2>The work in this room</h2></div><span className="toolbar-count">{tasks.length} total</span></div>
+        {tasksQuery.isLoading ? <ProjectTaskLoading /> : tasksQuery.isError ? <ErrorState label="Tasks could not be loaded." onRetry={() => tasksQuery.refetch()} /> : tasks.length ? <div>{tasks.map((task) => <TaskRow key={task.id} task={task} onEdit={canEditTasks ? setEditingTask : undefined} onStatus={canEditTasks ? changeTaskStatus : undefined} />)}</div> : <EmptyState title="No tasks in this room" description="Add the first step and give the project somewhere to go." action={canEditTasks && <Button variant="primary" onClick={() => setShowTask(true)} data-testid="button-create-project-task-empty"><Plus size={15} />Add task</Button>} />}
+      </section>
+      <ActivityFeed activities={visibleActivity.slice(0, 5)} loading={activityQuery.isLoading} error={activityQuery.isError} retry={() => activityQuery.refetch()} scoped />
+      <TeamPanel members={members} loading={membersQuery.isLoading} error={membersQuery.isError} retry={() => membersQuery.refetch()} canInvite={canInvite} canManage={canManageMembers} onInvite={() => setShowInvite(true)} onRoleChange={changeMemberRole} onRemove={setRemoving} />
+    </div>
+    {editing && <ProjectEditModal project={project} onClose={() => setEditing(false)} onSave={(data) => update.mutate({ projectId: id, data }, { onSuccess: (updated) => { setEditing(false); client.setQueryData(getGetProjectQueryKey(id), updated); invalidateProject(); } })} pending={update.isPending} />}
+    {(showTask || editingTask) && <TaskModal task={editingTask} projects={[project]} onClose={() => { setShowTask(false); setEditingTask(null); }} onSave={(data) => editingTask ? updateTask.mutate({ taskId: editingTask.id, data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); setEditingTask(null); } }) : createTask.mutate({ data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); client.invalidateQueries({ queryKey: getListActivityQueryKey() }); setShowTask(false); } })} pending={createTask.isPending || updateTask.isPending} />}
+    {showInvite && <MemberInviteModal form={inviteForm} setForm={setInviteForm} onClose={() => setShowInvite(false)} onSubmit={submitInvite} pending={invite.isPending} owner={currentRole === 'owner'} />}
+    {removing && <ConfirmModal title="Remove this member?" description={`${removing.name} will lose access to ${project.name}.`} onClose={() => setRemoving(null)} onConfirm={confirmRemoveMember} pending={removeMember.isPending} confirmLabel="Remove member" />}
+  </div>;
 }
-function ProjectEditModal({ project, onClose, onSave, pending }: { project: Project; onClose: () => void; onSave: (data: { name: string; description: string; color: string }) => void; pending: boolean }) { const [form, setForm] = useState({ name: project.name, description: project.description, color: project.color }); return <Modal title="Edit project" onClose={onClose}><form className="form-stack" onSubmit={(e) => { e.preventDefault(); onSave(form); }}><label>Project name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-edit-project-name" /></label><label>Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="input-edit-project-description" /></label><div className="modal-actions"><Button type="button" onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save changes'}</Button></div></form></Modal>; }
+
+function ProjectDetailLoading() {
+  return <div className="content-stack project-dashboard-loading"><div className="skeleton detail-skeleton-back" /><div className="detail-skeleton-hero"><div className="skeleton detail-skeleton-mark" /><div className="detail-skeleton-copy"><div className="skeleton detail-skeleton-kicker" /><div className="skeleton detail-skeleton-title" /><div className="skeleton detail-skeleton-line" /></div></div><div className="detail-skeleton-stats"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div><div className="detail-skeleton-columns"><div className="skeleton" /><div className="skeleton" /></div></div>;
+}
+function ProjectTaskLoading() {
+  return <div className="project-task-skeleton">{[1, 2, 3, 4].map((item) => <div className="skeleton" key={item} />)}</div>;
+}
+function TeamPanel({ members, loading, error, retry, canInvite, canManage, onInvite, onRoleChange, onRemove }: { members: Member[]; loading: boolean; error: boolean; retry: () => void; canInvite: boolean; canManage: boolean; onInvite: () => void; onRoleChange: (member: Member, role: 'admin' | 'member' | 'viewer') => void; onRemove: (member: Member) => void }) {
+  return <section className="panel team-panel"><div className="panel-header"><div><p className="eyebrow">People</p><h2>Team members</h2></div>{canInvite && <Button onClick={onInvite} data-testid="button-invite-member"><UserPlus size={15} />Invite</Button>}</div>{loading ? <div className="member-skeletons">{[1, 2, 3].map((item) => <div className="skeleton" key={item} />)}</div> : error ? <ErrorState label="The team list could not be loaded." onRetry={retry} /> : members.length ? <div className="member-list">{members.map((member) => <div className="member-row" key={member.id} data-testid={`row-project-member-${member.id}`}><Avatar name={member.name} /><div className="member-identity"><strong data-testid={`text-member-name-${member.id}`}>{member.name}</strong><span><Mail size={11} />{member.email}</span></div>{canManage && member.role !== 'owner' ? <div className="member-controls"><select value={member.role} onChange={(event) => onRoleChange(member, event.target.value as 'admin' | 'member' | 'viewer')} disabled={false} data-testid={`select-member-role-${member.id}`} aria-label={`Role for ${member.name}`}><option value="admin">Admin</option><option value="member">Member</option><option value="viewer">Viewer</option></select><button className="row-action row-delete" onClick={() => onRemove(member)} data-testid={`button-remove-member-${member.id}`} aria-label={`Remove ${member.name}`}><Trash2 size={14} /></button></div> : <span className="member-role"><ShieldCheck size={12} />{member.role}</span>}</div>)}</div> : <EmptyState title="No team members yet" description="Invite the people who will carry this work forward." action={canInvite && <Button onClick={onInvite} data-testid="button-invite-first-member"><UserPlus size={15} />Invite someone</Button>} />}</section>;
+}
+function MemberInviteModal({ form, setForm, onClose, onSubmit, pending, owner }: { form: { email: string; role: 'admin' | 'member' | 'viewer' }; setForm: (form: { email: string; role: 'admin' | 'member' | 'viewer' }) => void; onClose: () => void; onSubmit: (event: FormEvent) => void; pending: boolean; owner: boolean }) {
+  return <Modal title="Invite to this project" onClose={onClose}><form className="form-stack" onSubmit={onSubmit}><p className="modal-intro">Add a registered Northstar account to the team.</p><label>Email address<input autoFocus type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="name@studio.com" data-testid="input-member-email" /></label><label>Role<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as 'admin' | 'member' | 'viewer' })} data-testid="select-member-invite-role"><option value="member">Member</option><option value="viewer">Viewer</option>{owner && <option value="admin">Admin</option>}</select></label><div className="modal-actions"><Button type="button" onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" disabled={pending}>{pending ? 'Sending…' : 'Send invitation'}</Button></div></form></Modal>;
+}
+function ProjectEditModal({ project, onClose, onSave, pending }: { project: Project; onClose: () => void; onSave: (data: { name: string; description: string; color: string; status: 'active' | 'on_hold' | 'completed' | 'archived' }) => void; pending: boolean }) {
+  const [form, setForm] = useState({ name: project.name, description: project.description, color: project.color, status: project.status });
+  return <Modal title="Edit project" onClose={onClose}><form className="form-stack" onSubmit={(e) => { e.preventDefault(); if (form.name.trim()) onSave(form); }}><label>Project name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-edit-project-name" /></label><label>Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="input-edit-project-description" /></label><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as typeof form.status })} data-testid="select-edit-project-status"><option value="active">Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="archived">Archived</option></select></label><div className="modal-actions"><Button type="button" onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save changes'}</Button></div></form></Modal>;
+}
 
 function ActivityPage() { const query = useListActivity(); return <div className="content-stack"><div className="page-heading"><div><p className="eyebrow">Workspace / Activity</p><h1>Activity<span className="heading-period">.</span></h1><p className="page-subtitle">A quiet record of what is moving, and when.</p></div></div><section className="panel activity-page-panel">{query.isLoading ? <LoadingState label="Reading the room" /> : query.isError ? <ErrorState onRetry={() => query.refetch()} /> : query.data?.length ? <div className="activity-page-list">{query.data.map((activity) => <ActivityItem key={activity.id} activity={activity} />)}</div> : <EmptyState title="No activity yet" description="When work starts moving, its trail will appear here." />}</section></div>; }
 function SettingsPage() { const { theme, setTheme } = useTheme(); const [saved, setSaved] = useState(false); return <div className="content-stack settings-page"><div className="page-heading"><div><p className="eyebrow">Workspace / Settings</p><h1>Settings<span className="heading-period">.</span></h1><p className="page-subtitle">Set the room up so the work can stay clear.</p></div></div><section className="settings-section"><div className="settings-copy"><h2>Appearance</h2><p>Choose the light for your workbench. This preference stays with you.</p></div><div className="appearance-options"><button className={cx('appearance-card', theme === 'light' && 'appearance-selected')} onClick={() => setTheme('light')} data-testid="button-theme-light"><span className="appearance-preview light-preview"><Sun size={17} /></span><strong>Daylight</strong><small>Warm, paper-like</small></button><button className={cx('appearance-card', theme === 'dark' && 'appearance-selected')} onClick={() => setTheme('dark')} data-testid="button-theme-dark"><span className="appearance-preview dark-preview"><Moon size={17} /></span><strong>After hours</strong><small>Deep, low-glare</small></button></div></section><section className="settings-section"><div className="settings-copy"><h2>Workspace identity</h2><p>The details your team sees when they open Northstar.</p></div><div className="settings-fields"><label>Workspace name<input defaultValue="Northstar" data-testid="input-workspace-name" /></label><label>Workspace description<input defaultValue="Product studio" data-testid="input-workspace-description" /></label><div className="settings-actions"><Button variant="primary" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2200); }} data-testid="button-save-settings">{saved ? <><Check size={15} />Saved</> : 'Save preferences'}</Button></div></div></section><section className="settings-section health-section"><div className="settings-copy"><h2>Connection</h2><p>Workbench checks this connection before showing your latest work.</p></div><HealthStatus /></section></div>; }
 function HealthStatus() { const query = useHealthCheck({ query: { staleTime: 30000, queryKey: getHealthCheckQueryKey() } }); return <div className="health-card"><span className={cx('health-dot', query.isError && 'health-error')} /><div><strong>{query.isLoading ? 'Checking connection…' : query.isError ? 'Connection needs attention' : 'Workspace is connected'}</strong><small>{query.isError ? 'Try refreshing or check the API service.' : 'Your project data is syncing normally.'}</small></div></div>; }
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) { return <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-header"><h2>{title}</h2><button className="icon-btn" onClick={onClose} data-testid="button-close-modal" aria-label="Close"><X size={18} /></button></div>{children}</div></div>; }
-function ConfirmModal({ title, description, onClose, onConfirm, pending }: { title: string; description: string; onClose: () => void; onConfirm: () => void; pending: boolean }) { return <Modal title={title} onClose={onClose}><div className="confirm-copy"><div className="confirm-icon"><Trash2 size={20} /></div><p>{description}</p></div><div className="modal-actions"><Button onClick={onClose}>Keep it</Button><Button variant="danger" onClick={onConfirm} disabled={pending} data-testid="button-confirm-delete">{pending ? 'Deleting…' : 'Delete task'}</Button></div></Modal>; }
+function ConfirmModal({ title, description, onClose, onConfirm, pending, confirmLabel = 'Delete task' }: { title: string; description: string; onClose: () => void; onConfirm: () => void; pending: boolean; confirmLabel?: string }) { return <Modal title={title} onClose={onClose}><div className="confirm-copy"><div className="confirm-icon"><Trash2 size={20} /></div><p>{description}</p></div><div className="modal-actions"><Button onClick={onClose}>Keep it</Button><Button variant="danger" onClick={onConfirm} disabled={pending} data-testid="button-confirm-delete">{pending ? 'Working…' : confirmLabel}</Button></div></Modal>; }
 
 function Router() {
   return (

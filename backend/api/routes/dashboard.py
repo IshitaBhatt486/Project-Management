@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.api.dependencies import get_current_user
@@ -20,6 +20,8 @@ def get_dashboard_summary(
 
 @router.get("/activity", response_model=list[ActivityRead])
 def list_activity(
-    _user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    project_name: str | None = Query(default=None, max_length=120, alias="projectName"),
+    _user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> list[ActivityRead]:
-    return service.activity(db)
+    return service.activity(db, project_name)

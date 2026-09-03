@@ -39,30 +39,113 @@ export interface HealthStatus {
   status: string;
 }
 
+export type ProjectStatus = typeof ProjectStatus[keyof typeof ProjectStatus];
+
+
+export const ProjectStatus = {
+  active: 'active',
+  on_hold: 'on_hold',
+  completed: 'completed',
+  archived: 'archived',
+} as const;
+
 export interface Project {
   id: number;
   name: string;
   key: string;
   description: string;
   color: string;
+  ownerId: number | null;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
   taskCount: number;
   completedTaskCount: number;
 }
 
+export type MemberRole = typeof MemberRole[keyof typeof MemberRole];
+
+
+export const MemberRole = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  viewer: 'viewer',
+} as const;
+
+export interface Member {
+  id: number;
+  projectId: number;
+  userId: number;
+  name: string;
+  email: string;
+  role: MemberRole;
+}
+
+export type MemberInviteRole = typeof MemberInviteRole[keyof typeof MemberInviteRole];
+
+
+export const MemberInviteRole = {
+  admin: 'admin',
+  member: 'member',
+  viewer: 'viewer',
+} as const;
+
+export interface MemberInvite {
+  email: string;
+  role: MemberInviteRole;
+}
+
+export type MemberRoleUpdateRole = typeof MemberRoleUpdateRole[keyof typeof MemberRoleUpdateRole];
+
+
+export const MemberRoleUpdateRole = {
+  admin: 'admin',
+  member: 'member',
+  viewer: 'viewer',
+} as const;
+
+export interface MemberRoleUpdate {
+  role: MemberRoleUpdateRole;
+}
+
+export interface ProjectList {
+  items: Project[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type ProjectInputStatus = typeof ProjectInputStatus[keyof typeof ProjectInputStatus];
+
+
+export const ProjectInputStatus = {
+  active: 'active',
+  on_hold: 'on_hold',
+  completed: 'completed',
+} as const;
+
 export interface ProjectInput {
   /** @minLength 1 */
   name: string;
-  /** @minLength 1 */
-  key: string;
+  /**
+     * @minLength 1
+     * @maxLength 12
+     */
+  key?: string;
+  /** @maxLength 1000 */
   description?: string;
   color?: string;
+  status?: ProjectInputStatus;
 }
 
 export interface ProjectUpdate {
   /** @minLength 1 */
   name?: string;
+  /** @maxLength 1000 */
   description?: string;
   color?: string;
+  status?: ProjectStatus;
 }
 
 export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
@@ -189,6 +272,23 @@ export interface Activity {
   createdAt: string;
 }
 
+export type ListProjectsParams = {
+/**
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+pageSize?: number;
+status?: ProjectStatus;
+};
+
 export type ListTasksParams = {
 projectId?: number;
 status?: ListTasksStatus;
@@ -204,4 +304,11 @@ export const ListTasksStatus = {
   in_review: 'in_review',
   done: 'done',
 } as const;
+
+export type ListActivityParams = {
+/**
+ * @maxLength 120
+ */
+projectName?: string;
+};
 
