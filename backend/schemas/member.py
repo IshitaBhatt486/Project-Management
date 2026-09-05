@@ -23,9 +23,13 @@ class MemberInvite(BaseModel):
     email: EmailStr
     role: AssignableMemberRole = "member"
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class MemberRoleUpdate(BaseModel):
     role: AssignableMemberRole
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class MemberRead(BaseModel):

@@ -55,12 +55,14 @@ def seed() -> None:
                     due_date=date(2026, 9, 2),
                 ),
                 Activity(
+                    project_id=product.id,
                     kind="task_updated",
                     message="Maya moved Finalize onboarding flow to In progress",
                     project_name=product.name,
                     created_at=datetime.now(timezone.utc),
                 ),
                 Activity(
+                    project_id=operations.id,
                     kind="task_completed",
                     message="Maya completed Audit support macros",
                     project_name=operations.name,

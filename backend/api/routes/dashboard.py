@@ -13,15 +13,15 @@ service = DashboardService()
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)
 def get_dashboard_summary(
-    _user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> DashboardSummary:
-    return service.summary(db)
+    return service.summary(db, user.id)
 
 
 @router.get("/activity", response_model=list[ActivityRead])
 def list_activity(
     project_name: str | None = Query(default=None, max_length=120, alias="projectName"),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ActivityRead]:
-    return service.activity(db, project_name)
+    return service.activity(db, user.id, project_name)

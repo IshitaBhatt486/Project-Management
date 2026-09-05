@@ -5,6 +5,7 @@ from backend.db.models import ProjectMember, User
 from backend.repositories.project_member import ProjectMemberRepository
 from backend.repositories.user import UserRepository
 from backend.schemas.member import MemberInvite, MemberRead, MemberRoleUpdate
+from backend.services.activity_log import ActivityLogService
 from backend.services.project_access import require_membership, require_project_role
 
 
@@ -13,9 +14,11 @@ class ProjectMemberService:
         self,
         repository: ProjectMemberRepository | None = None,
         user_repository: UserRepository | None = None,
+        activity_logs: ActivityLogService | None = None,
     ) -> None:
         self.repository = repository or ProjectMemberRepository()
         self.user_repository = user_repository or UserRepository()
+        self.activity_logs = activity_logs or ActivityLogService()
 
     def _read(self, member: ProjectMember, user: User) -> MemberRead:
         return MemberRead(
@@ -55,6 +58,18 @@ class ProjectMemberService:
                 detail="That user is already a project member",
             )
         member = self.repository.create(db, project_id, user.id, payload.role)
+        self.activity_logs.record(
+            db,
+            project_id,
+            actor_id,
+            "user_invited",
+            {
+                "user_id": user.id,
+                "user_name": user.name,
+                "user_email": user.email,
+                "role": payload.role,
+            },
+        )
         return self._read(member, user)
 
     def update_role(
@@ -75,7 +90,20 @@ class ProjectMemberService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="The project owner role cannot be changed",
             )
+        previous_role = member.role
         updated = self.repository.update(db, member, payload.role)
+        self.activity_logs.record(
+            db,
+            project_id,
+            actor_id,
+            "role_changed",
+            {
+                "user_id": user.id,
+                "user_name": user.name,
+                "previous_role": previous_role,
+                "role": updated.role,
+            },
+        )
         return self._read(updated, user)
 
     def remove(
@@ -85,10 +113,22 @@ class ProjectMemberService:
         target = self.repository.get(db, project_id, member_id)
         if target is None:
             raise HTTPException(status_code=404, detail="Member not found")
-        member, _user = target
+        member, user = target
         if member.role == "owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="The project owner cannot be removed",
             )
+        self.activity_logs.record(
+            db,
+            project_id,
+            actor_id,
+            "user_removed",
+            {
+                "user_id": user.id,
+                "user_name": user.name,
+                "user_email": user.email,
+                "role": member.role,
+            },
+        )
         self.repository.delete(db, member)

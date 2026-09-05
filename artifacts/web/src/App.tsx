@@ -1,11 +1,11 @@
-import { createContext, type ButtonHTMLAttributes, type FormEvent, type ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, lazy, Suspense, type ButtonHTMLAttributes, type FormEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import NotFound from '@/pages/not-found';
 import {
   Activity as ActivityIcon,
+  Archive as ArchiveIcon,
   ArrowDown,
   ArrowUpRight,
   CalendarDays,
@@ -43,6 +43,7 @@ import {
   getGetProjectQueryKey,
   getHealthCheckQueryKey,
   getListActivityQueryKey,
+  getListProjectActivityByProjectQueryKey,
   getListProjectMembersQueryKey,
   getListProjectsQueryKey,
   getListTasksQueryKey,
@@ -55,6 +56,7 @@ import {
   useHealthCheck,
   useInviteProjectMember,
   useListProjectMembers,
+  useListProjectActivityByProject,
   useListActivity,
   useListProjects,
   useListTasks,
@@ -63,6 +65,7 @@ import {
   useUpdateProject,
   useUpdateTask,
   type Activity,
+  type ActivityLog,
   type Member,
   type Project,
   type Task,
@@ -70,7 +73,6 @@ import {
   type TaskStatus,
 } from '@workspace/api-client-react';
 import { AuthGate, useAuthUser } from '@/components/auth-gate';
-import { AuthPage } from '@/components/auth-pages';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Route,
@@ -81,6 +83,9 @@ import {
 } from 'wouter';
 
 const queryClient = new QueryClient();
+const AuthPage = lazy(() => import('@/components/auth-pages').then((module) => ({ default: module.AuthPage })));
+const NotFound = lazy(() => import('@/pages/not-found'));
+const paletteProjectParams = { pageSize: 50 } as const;
 
 const statusLabels: Record<string, string> = { backlog: 'Backlog', todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done', active: 'Active', on_hold: 'On hold', completed: 'Completed', archived: 'Archived' };
 const priorityLabels: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
@@ -105,6 +110,7 @@ function isOverdue(value?: string | null) { return !!value && new Date(value).ge
 
 type ThemeContextValue = { theme: 'light' | 'dark'; setTheme: (theme: 'light' | 'dark') => void };
 const ThemeContext = createContext<ThemeContextValue>({ theme: 'light', setTheme: () => {} });
+const WorkspaceCommandsContext = createContext({ openNewProject: () => {} });
 function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('workbench-theme') as 'light' | 'dark') || 'light');
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('workbench-theme', theme); }, [theme]);
@@ -194,15 +200,15 @@ function ProfileMenu() {
   );
 }
 
-function Topbar({ onMenu }: { onMenu: () => void }) {
+function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) {
   const { theme, setTheme } = useTheme();
   const [location] = useLocation();
   const pageTitle = location === '/' ? 'Overview' : location.slice(1).split('/')[0].replace('-', ' ');
   return <header className="topbar">
-    <button className="mobile-menu" onClick={onMenu} data-testid="button-open-menu"><Menu size={20} /></button>
+    <button className="mobile-menu" onClick={onMenu} data-testid="button-open-menu" aria-label="Open navigation"><Menu size={20} /></button>
     <div className="breadcrumb"><span>Northstar</span><span className="breadcrumb-slash">/</span><strong>{pageTitle.charAt(0).toUpperCase() + pageTitle.slice(1)}</strong></div>
     <div className="topbar-actions">
-      <button className="icon-btn search-trigger" data-testid="button-search" aria-label="Search"><Search size={18} /><span>Search</span><kbd>⌘ K</kbd></button>
+      <button className="icon-btn search-trigger" onClick={onSearch} data-testid="button-search" aria-label="Search projects and commands"><Search size={18} /><span>Search</span><kbd>Ctrl K</kbd></button>
       <button className="icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} data-testid="button-toggle-theme" aria-label="Toggle theme">{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
        <ProfileMenu />
     </div>
@@ -211,7 +217,66 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 
 function Shell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  return <div className="app-noise app-shell"><div className={cx('mobile-overlay', mobileOpen && 'mobile-overlay-visible')} onClick={() => setMobileOpen(false)} /><div className={cx('sidebar-wrap', mobileOpen && 'sidebar-wrap-open')}><Sidebar onNavigate={() => setMobileOpen(false)} /></div><div className="main-shell"><Topbar onMenu={() => setMobileOpen(true)} /><main className="main-content page-enter">{children}</main></div></div>;
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [projectForm, setProjectForm] = useState({ name: '', key: '', description: '', color: projectColors[0] });
+  const createProject = useCreateProject();
+  const client = useQueryClient();
+  const projectsQuery = useListProjects(paletteProjectParams, { query: { staleTime: 30000, queryKey: getListProjectsQueryKey(paletteProjectParams) } });
+  const openNewProject = useCallback(() => { setPaletteOpen(false); setNewProjectOpen(true); }, []);
+  const submitProject = (event: FormEvent) => {
+    event.preventDefault();
+    if (!projectForm.name.trim() || !projectForm.key.trim()) return;
+    createProject.mutate({ data: projectForm }, { onSuccess: () => {
+      setNewProjectOpen(false);
+      setProjectForm({ name: '', key: '', description: '', color: projectColors[0] });
+      client.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+    } });
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = !!target?.closest('input, textarea, select, [contenteditable="true"]');
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      } else if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        openNewProject();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openNewProject]);
+  return <WorkspaceCommandsContext.Provider value={{ openNewProject }}><div className="app-noise app-shell"><div className={cx('mobile-overlay', mobileOpen && 'mobile-overlay-visible')} onClick={() => setMobileOpen(false)} /><div className={cx('sidebar-wrap', mobileOpen && 'sidebar-wrap-open')}><Sidebar onNavigate={() => setMobileOpen(false)} /></div><div className="main-shell"><Topbar onMenu={() => setMobileOpen(true)} onSearch={() => setPaletteOpen(true)} /><main className="main-content page-enter">{children}</main></div></div>{paletteOpen && <CommandPalette projects={projectsQuery.data?.items || []} loading={projectsQuery.isLoading} onClose={() => setPaletteOpen(false)} onNewProject={openNewProject} />}{newProjectOpen && <ProjectModal form={projectForm} setForm={setProjectForm} onClose={() => setNewProjectOpen(false)} onSubmit={submitProject} pending={createProject.isPending} />}</WorkspaceCommandsContext.Provider>;
+}
+
+type CommandItem = { id: string; label: string; detail: string; icon: typeof Search; run: () => void };
+function CommandPalette({ projects, loading, onClose, onNewProject }: { projects: Project[]; loading: boolean; onClose: () => void; onNewProject: () => void }) {
+  const [, setLocation] = useLocation();
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const normalized = query.trim().toLowerCase();
+  const navigate = (path: string) => { onClose(); setLocation(path); };
+  const items = useMemo<CommandItem[]>(() => {
+    const commands: CommandItem[] = [
+      { id: 'new-project', label: 'New project', detail: 'Create a project', icon: Plus, run: onNewProject },
+      { id: 'projects', label: 'View projects', detail: 'Go to Projects', icon: FolderKanban, run: () => navigate('/projects') },
+      { id: 'tasks', label: 'View tasks', detail: 'Go to Tasks', icon: ListTodo, run: () => navigate('/tasks') },
+      { id: 'activity', label: 'View activity', detail: 'Go to Activity', icon: ActivityIcon, run: () => navigate('/activity') },
+    ];
+    const projectItems: CommandItem[] = projects.map((project) => ({ id: `project-${project.id}`, label: project.name, detail: `${project.key} · Project`, icon: FolderKanban, run: () => navigate(`/projects/${project.id}`) }));
+    return [...commands, ...projectItems].filter((item) => !normalized || `${item.label} ${item.detail}`.toLowerCase().includes(normalized)).slice(0, 12);
+  }, [normalized, projects]);
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    inputRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, []);
+  useEffect(() => { setActiveIndex(0); }, [query]);
+  const choose = (index: number) => items[index]?.run();
+  return <div className="command-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="command-palette" role="dialog" aria-modal="true" aria-labelledby="command-title" data-testid="command-palette"><h2 id="command-title" className="sr-only">Search projects and commands</h2><div className="command-input-wrap"><Search size={18} aria-hidden="true" /><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, Math.max(items.length - 1, 0))); } else if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); } else if (event.key === 'Enter') { event.preventDefault(); choose(activeIndex); } else if (event.key === 'Escape') { event.preventDefault(); onClose(); } }} placeholder="Search projects or type a command…" role="combobox" aria-expanded="true" aria-controls="command-results" aria-activedescendant={items[activeIndex] ? `command-${items[activeIndex].id}` : undefined} aria-autocomplete="list" data-testid="input-global-search" /><kbd>Esc</kbd></div><div id="command-results" className="command-results" role="listbox" aria-label="Search results">{loading ? <div className="command-empty" role="option" aria-disabled="true">Loading projects…</div> : items.length ? items.map((item, index) => { const Icon = item.icon; return <button type="button" id={`command-${item.id}`} role="option" aria-selected={index === activeIndex} className={cx('command-result', index === activeIndex && 'command-result-active')} key={item.id} onMouseEnter={() => setActiveIndex(index)} onClick={() => choose(index)} data-testid={`command-result-${item.id}`}><span className="command-result-icon"><Icon size={16} /></span><span><strong>{item.label}</strong><small>{item.detail}</small></span>{index === activeIndex && <kbd>Enter</kbd>}</button>; }) : <div className="command-empty" role="option" aria-disabled="true">No projects or commands found for “{query}”</div>}</div><div className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span><span><kbd>N</kbd> New project</span></div></div></div>;
 }
 
 function LoadingState({ label = 'Loading your workspace' }: { label?: string }) { return <div className="loading-state"><div className="skeleton loading-line" /><div className="skeleton loading-line short" /><span>{label}</span></div>; }
@@ -281,18 +346,14 @@ function ActivityItem({ activity }: { activity: Activity }) {
 function formatRelative(value: string) { const then = new Date(value).getTime(); if (Number.isNaN(then)) return value; const mins = Math.floor((Date.now() - then) / 60000); if (mins < 60) return `${Math.max(mins, 1)}m ago`; const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`; return `${Math.floor(hrs / 24)}d ago`; }
 
 function ProjectsPage() {
-  const query = useListProjects();
-  const client = useQueryClient();
-  const create = useCreateProject();
-  const [showCreate, setShowCreate] = useState(false);
+  const query = useListProjects({ pageSize: 50 });
+  const { openNewProject } = useContext(WorkspaceCommandsContext);
   const [search, setSearch] = useState('');
-  const [form, setForm] = useState({ name: '', key: '', description: '', color: projectColors[0] });
-  const projects = (query.data?.items || []).filter((p) => `${p.name} ${p.key}`.toLowerCase().includes(search.toLowerCase()));
-  const submit = (event: FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.key.trim()) return; create.mutate({ data: form }, { onSuccess: () => { setShowCreate(false); setForm({ name: '', key: '', description: '', color: projectColors[0] }); client.invalidateQueries({ queryKey: getListProjectsQueryKey() }); } }); };
-  return <div className="content-stack"><div className="page-heading"><div><p className="eyebrow">Workspace / Projects</p><h1>Projects<span className="heading-period">.</span></h1><p className="page-subtitle">A small number of clear rooms beats a crowded hallway.</p></div><Button variant="primary" onClick={() => setShowCreate(true)} data-testid="button-new-project"><Plus size={16} />New project</Button></div>
-    <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a project" data-testid="input-search-projects" /></div><span className="toolbar-count">{projects.length} project{projects.length === 1 ? '' : 's'}</span></div>
-    {query.isLoading ? <LoadingState label="Arranging projects" /> : query.isError ? <ErrorState onRetry={() => query.refetch()} /> : projects.length ? <div className="project-grid">{projects.map((project) => <ProjectCard key={project.id} project={project} />)}</div> : <EmptyState title={search ? 'Nothing matches that search' : 'Make room for the first project'} description={search ? 'Try a different name or key.' : 'Projects give tasks a place to belong and a direction to follow.'} action={!search && <Button variant="primary" onClick={() => setShowCreate(true)} data-testid="button-create-empty-project"><Plus size={15} />Create project</Button>} />}
-    {showCreate && <ProjectModal form={form} setForm={setForm} onClose={() => setShowCreate(false)} onSubmit={submit} pending={create.isPending} />}
+  const normalized = search.trim().toLowerCase();
+  const projects = useMemo(() => (query.data?.items || []).filter((project) => !normalized || `${project.name} ${project.key} ${project.description}`.toLowerCase().includes(normalized)), [query.data?.items, normalized]);
+  return <div className="content-stack"><div className="page-heading"><div><p className="eyebrow">Workspace / Projects</p><h1>Projects<span className="heading-period">.</span></h1><p className="page-subtitle">A small number of clear rooms beats a crowded hallway.</p></div><Button variant="primary" onClick={openNewProject} data-testid="button-new-project"><Plus size={16} />New project <kbd>N</kbd></Button></div>
+    <div className="toolbar"><label className="search-field"><Search size={16} aria-hidden="true" /><span className="sr-only">Search projects</span><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find by name, key, or description" data-testid="input-search-projects" /></label><span className="toolbar-count" aria-live="polite">{projects.length} project{projects.length === 1 ? '' : 's'}</span></div>
+    {query.isLoading ? <LoadingState label="Arranging projects" /> : query.isError ? <ErrorState onRetry={() => query.refetch()} /> : projects.length ? <div className="project-grid">{projects.map((project) => <ProjectCard key={project.id} project={project} />)}</div> : <EmptyState title={search ? 'Nothing matches that search' : 'Make room for the first project'} description={search ? 'Try a different name, key, or description.' : 'Projects give tasks a place to belong and a direction to follow.'} action={!search && <Button variant="primary" onClick={openNewProject} data-testid="button-create-empty-project"><Plus size={15} />Create project</Button>} />}
   </div>;
 }
 function ProjectCard({ project }: { project: Project }) { const percent = project.taskCount ? Math.round(project.completedTaskCount / project.taskCount * 100) : 0; return <a className="project-card" href={`/projects/${project.id}`} data-testid={`card-project-${project.id}`}><div className="project-card-top"><span className="project-color large" style={{ backgroundColor: project.color || projectColors[project.id % projectColors.length] }} /><span className="font-mono-app project-key">{project.key}</span><ArrowUpRight size={17} className="card-arrow" /></div><h2>{project.name}</h2><p>{project.description || 'A focused space for good work.'}</p><div className="project-card-bottom"><div className="progress-track"><span style={{ width: `${percent}%`, backgroundColor: project.color || 'hsl(var(--primary))' }} /></div><span>{percent}% <small>complete</small></span></div><div className="project-card-meta"><span>{project.taskCount} tasks</span><span>{project.completedTaskCount} done</span></div></a>; }
@@ -335,8 +396,9 @@ function ProjectDetailPage() {
   const tasksQuery = useListTasks(taskParams, { query: { enabled: Number.isFinite(id), queryKey: getListTasksQueryKey(taskParams) } });
   const membersQuery = useListProjectMembers(id, { query: { enabled: Number.isFinite(id), queryKey: getListProjectMembersQueryKey(id) } });
   const project = projectQuery.data;
-  const activityParams = project ? { projectName: project.name } : undefined;
-  const activityQuery = useListActivity(activityParams, { query: { enabled: !!project, queryKey: getListActivityQueryKey(activityParams) } });
+  const [activityPage, setActivityPage] = useState(1);
+  const activityParams = { page: activityPage, pageSize: 5 };
+  const activityQuery = useListProjectActivityByProject(id, activityParams, { query: { enabled: Number.isFinite(id) && !!project, queryKey: getListProjectActivityByProjectQueryKey(id, activityParams) } });
   const update = useUpdateProject();
   const updateTask = useUpdateTask();
   const createTask = useCreateTask();
@@ -352,7 +414,7 @@ function ProjectDetailPage() {
 
   const tasks = tasksQuery.data || [];
   const members = membersQuery.data || [];
-  const visibleActivity = activityQuery.data || [];
+  const visibleActivity = activityQuery.data?.items || [];
   const currentMember = members.find((member) => member.userId === user?.id);
   const currentRole = project?.ownerId === user?.id ? 'owner' : currentMember?.role || 'viewer';
   const canInvite = currentRole === 'owner' || currentRole === 'admin';
@@ -363,10 +425,12 @@ function ProjectDetailPage() {
     client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
     client.invalidateQueries({ queryKey: getListProjectsQueryKey() });
     client.invalidateQueries({ queryKey: getListActivityQueryKey() });
+    client.invalidateQueries({ queryKey: getListProjectActivityByProjectQueryKey(id) });
   };
   const invalidateMembers = () => {
     client.invalidateQueries({ queryKey: getListProjectMembersQueryKey(id) });
     client.invalidateQueries({ queryKey: getListActivityQueryKey() });
+    client.invalidateQueries({ queryKey: getListProjectActivityByProjectQueryKey(id) });
   };
 
   if (!Number.isFinite(id)) return <ErrorState label="That project address is not valid." />;
@@ -429,7 +493,7 @@ function ProjectDetailPage() {
     <div className="detail-stats project-overview-stats">
       <div><span>Progress</span><strong data-testid={`text-project-progress-${id}`}>{percent}%</strong><small>{project.completedTaskCount} of {project.taskCount} complete</small></div>
       <div><span>Team members</span><strong data-testid={`text-project-member-count-${id}`}>{membersQuery.isLoading ? '—' : members.length}</strong><small>people with a place in this room</small></div>
-      <div><span>Recent activity</span><strong data-testid={`text-project-activity-count-${id}`}>{activityQuery.isLoading ? '—' : visibleActivity.length}</strong><small>signals in the workspace trail</small></div>
+      <div><span>Recent activity</span><strong data-testid={`text-project-activity-count-${id}`}>{activityQuery.isLoading ? '—' : activityQuery.data?.total || 0}</strong><small>signals in the project trail</small></div>
       <div><span>Open tasks</span><strong data-testid={`text-project-open-count-${id}`}>{Math.max(project.taskCount - project.completedTaskCount, 0)}</strong><small>still asking for attention</small></div>
     </div>
     <div className="project-dashboard-grid">
@@ -437,11 +501,11 @@ function ProjectDetailPage() {
         <div className="panel-header"><div><p className="eyebrow">Project tasks</p><h2>The work in this room</h2></div><span className="toolbar-count">{tasks.length} total</span></div>
         {tasksQuery.isLoading ? <ProjectTaskLoading /> : tasksQuery.isError ? <ErrorState label="Tasks could not be loaded." onRetry={() => tasksQuery.refetch()} /> : tasks.length ? <div>{tasks.map((task) => <TaskRow key={task.id} task={task} onEdit={canEditTasks ? setEditingTask : undefined} onStatus={canEditTasks ? changeTaskStatus : undefined} />)}</div> : <EmptyState title="No tasks in this room" description="Add the first step and give the project somewhere to go." action={canEditTasks && <Button variant="primary" onClick={() => setShowTask(true)} data-testid="button-create-project-task-empty"><Plus size={15} />Add task</Button>} />}
       </section>
-      <ActivityFeed activities={visibleActivity.slice(0, 5)} loading={activityQuery.isLoading} error={activityQuery.isError} retry={() => activityQuery.refetch()} scoped />
+       <ProjectActivityFeed items={visibleActivity} loading={activityQuery.isLoading} error={activityQuery.isError} retry={() => activityQuery.refetch()} page={activityPage} pageSize={activityParams.pageSize} total={activityQuery.data?.total || 0} onPageChange={setActivityPage} />
       <TeamPanel members={members} loading={membersQuery.isLoading} error={membersQuery.isError} retry={() => membersQuery.refetch()} canInvite={canInvite} canManage={canManageMembers} onInvite={() => setShowInvite(true)} onRoleChange={changeMemberRole} onRemove={setRemoving} />
     </div>
-    {editing && <ProjectEditModal project={project} onClose={() => setEditing(false)} onSave={(data) => update.mutate({ projectId: id, data }, { onSuccess: (updated) => { setEditing(false); client.setQueryData(getGetProjectQueryKey(id), updated); invalidateProject(); } })} pending={update.isPending} />}
-    {(showTask || editingTask) && <TaskModal task={editingTask} projects={[project]} onClose={() => { setShowTask(false); setEditingTask(null); }} onSave={(data) => editingTask ? updateTask.mutate({ taskId: editingTask.id, data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); setEditingTask(null); } }) : createTask.mutate({ data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); client.invalidateQueries({ queryKey: getListActivityQueryKey() }); setShowTask(false); } })} pending={createTask.isPending || updateTask.isPending} />}
+     {editing && <ProjectEditModal project={project} onClose={() => setEditing(false)} onSave={(data) => update.mutate({ projectId: id, data }, { onSuccess: (updated) => { setEditing(false); client.setQueryData(getGetProjectQueryKey(id), updated); invalidateProject(); } })} pending={update.isPending} />}
+     {(showTask || editingTask) && <TaskModal task={editingTask} projects={[project]} onClose={() => { setShowTask(false); setEditingTask(null); }} onSave={(data) => editingTask ? updateTask.mutate({ taskId: editingTask.id, data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); setEditingTask(null); } }) : createTask.mutate({ data: data as never }, { onSuccess: () => { client.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }); client.invalidateQueries({ queryKey: getListTasksQueryKey({ projectId: id }) }); client.invalidateQueries({ queryKey: getListActivityQueryKey() }); client.invalidateQueries({ queryKey: getListProjectActivityByProjectQueryKey(id) }); setShowTask(false); } })} pending={createTask.isPending || updateTask.isPending} />}
     {showInvite && <MemberInviteModal form={inviteForm} setForm={setInviteForm} onClose={() => setShowInvite(false)} onSubmit={submitInvite} pending={invite.isPending} owner={currentRole === 'owner'} />}
     {removing && <ConfirmModal title="Remove this member?" description={`${removing.name} will lose access to ${project.name}.`} onClose={() => setRemoving(null)} onConfirm={confirmRemoveMember} pending={removeMember.isPending} confirmLabel="Remove member" />}
   </div>;
@@ -452,6 +516,14 @@ function ProjectDetailLoading() {
 }
 function ProjectTaskLoading() {
   return <div className="project-task-skeleton">{[1, 2, 3, 4].map((item) => <div className="skeleton" key={item} />)}</div>;
+}
+function ProjectActivityFeed({ items, loading, error, retry, page, pageSize, total, onPageChange }: { items: ActivityLog[]; loading: boolean; error: boolean; retry: () => void; page: number; pageSize: number; total: number; onPageChange: (page: number) => void }) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  return <section className="panel activity-panel project-activity-panel"><div className="panel-header"><div><p className="eyebrow">Latest actions</p><h2>Recent movement</h2></div><span className="toolbar-count">{total} total</span></div>{loading ? <div className="activity-skeleton"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : error ? <ErrorState label="Activity could not be loaded." onRetry={retry} /> : items.length ? <><div className="activity-list" data-testid="feed-project-activity">{items.map((item) => <ProjectActivityItem key={item.id} activity={item} />)}</div>{pageCount > 1 && <div className="activity-pagination"><button type="button" className="pagination-button" disabled={page === 1} onClick={() => onPageChange(page - 1)}>Previous</button><span>Page {page} of {pageCount}</span><button type="button" className="pagination-button" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>Next</button></div>}</> : <EmptyState title="The room is quiet" description="Updates for this project will gather here." />}</section>;
+}
+function ProjectActivityItem({ activity }: { activity: ActivityLog }) {
+  const icon = activity.action === 'project_created' ? <FolderKanban size={16} /> : activity.action === 'user_invited' ? <UserPlus size={16} /> : activity.action === 'user_removed' ? <Trash2 size={16} /> : activity.action === 'role_changed' ? <ShieldCheck size={16} /> : activity.action === 'project_archived' ? <ArchiveIcon size={16} /> : <Pencil size={16} />;
+  return <div className="activity-item" data-testid={`project-activity-${activity.id}`}><span className="activity-icon">{icon}</span><div><strong>{activity.message}</strong><small>{activity.actorName} <span>·</span> {formatRelative(activity.createdAt)}</small></div></div>;
 }
 function TeamPanel({ members, loading, error, retry, canInvite, canManage, onInvite, onRoleChange, onRemove }: { members: Member[]; loading: boolean; error: boolean; retry: () => void; canInvite: boolean; canManage: boolean; onInvite: () => void; onRoleChange: (member: Member, role: 'admin' | 'member' | 'viewer') => void; onRemove: (member: Member) => void }) {
   return <section className="panel team-panel"><div className="panel-header"><div><p className="eyebrow">People</p><h2>Team members</h2></div>{canInvite && <Button onClick={onInvite} data-testid="button-invite-member"><UserPlus size={15} />Invite</Button>}</div>{loading ? <div className="member-skeletons">{[1, 2, 3].map((item) => <div className="skeleton" key={item} />)}</div> : error ? <ErrorState label="The team list could not be loaded." onRetry={retry} /> : members.length ? <div className="member-list">{members.map((member) => <div className="member-row" key={member.id} data-testid={`row-project-member-${member.id}`}><Avatar name={member.name} /><div className="member-identity"><strong data-testid={`text-member-name-${member.id}`}>{member.name}</strong><span><Mail size={11} />{member.email}</span></div>{canManage && member.role !== 'owner' ? <div className="member-controls"><select value={member.role} onChange={(event) => onRoleChange(member, event.target.value as 'admin' | 'member' | 'viewer')} disabled={false} data-testid={`select-member-role-${member.id}`} aria-label={`Role for ${member.name}`}><option value="admin">Admin</option><option value="member">Member</option><option value="viewer">Viewer</option></select><button className="row-action row-delete" onClick={() => onRemove(member)} data-testid={`button-remove-member-${member.id}`} aria-label={`Remove ${member.name}`}><Trash2 size={14} /></button></div> : <span className="member-role"><ShieldCheck size={12} />{member.role}</span>}</div>)}</div> : <EmptyState title="No team members yet" description="Invite the people who will carry this work forward." action={canInvite && <Button onClick={onInvite} data-testid="button-invite-first-member"><UserPlus size={15} />Invite someone</Button>} />}</section>;
@@ -475,7 +547,7 @@ function Router() {
     // Keep a shared shell (sidebar, navbar) outside the boundary so it
     // survives a page crash.
     <AuthGate>
-      <RoutedErrorBoundary>
+      <RoutedErrorBoundary><Suspense fallback={<LoadingState />}>
         <Switch>
           <Route path="/login"><AuthPage mode="login" /></Route>
           <Route path="/register"><AuthPage mode="register" /></Route>
@@ -487,7 +559,7 @@ function Router() {
           <Route path="/settings"><Shell><SettingsPage /></Shell></Route>
           <Route component={NotFound} />
         </Switch>
-      </RoutedErrorBoundary>
+      </Suspense></RoutedErrorBoundary>
     </AuthGate>
   );
 }

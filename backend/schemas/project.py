@@ -18,6 +18,7 @@ camel_case = AliasGenerator(
 api_model_config = ConfigDict(
     alias_generator=camel_case,
     populate_by_name=True,
+    extra="forbid",
 )
 
 ProjectStatus = Literal["active", "on_hold", "completed", "archived"]
@@ -25,15 +26,28 @@ ProjectStatus = Literal["active", "on_hold", "completed", "archived"]
 
 class ProjectBase(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    key: str = Field(min_length=1, max_length=12)
+    key: str = Field(
+        min_length=1,
+        max_length=12,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]*$",
+    )
     description: str = Field(default="", max_length=1000)
-    color: str = "indigo"
+    color: str = Field(
+        default="indigo",
+        max_length=24,
+        pattern=r"^(#[0-9A-Fa-f]{6}|[A-Za-z][A-Za-z0-9_-]*)$",
+    )
 
     model_config = api_model_config
 
 
 class ProjectCreate(ProjectBase):
-    key: str | None = Field(default=None, min_length=1, max_length=12)
+    key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=12,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]*$",
+    )
     status: Literal["active", "on_hold", "completed"] = "active"
 
     @field_validator("name")
@@ -48,7 +62,11 @@ class ProjectCreate(ProjectBase):
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=1000)
-    color: str | None = None
+    color: str | None = Field(
+        default=None,
+        max_length=24,
+        pattern=r"^(#[0-9A-Fa-f]{6}|[A-Za-z][A-Za-z0-9_-]*)$",
+    )
     status: ProjectStatus | None = None
 
     model_config = api_model_config

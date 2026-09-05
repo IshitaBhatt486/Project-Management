@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.api.dependencies import get_current_user
 from backend.db.models import User
 from backend.db.session import get_db
-from backend.schemas.task import TaskCreate, TaskRead, TaskUpdate
+from backend.schemas.task import TaskCreate, TaskRead, TaskStatus, TaskUpdate
 from backend.services.task import TaskService
 from backend.services.project_access import require_project_role
 
@@ -15,7 +15,7 @@ service = TaskService()
 @router.get("", response_model=list[TaskRead])
 def list_tasks(
     project_id: int | None = Query(default=None, alias="projectId"),
-    task_status: str | None = Query(default=None, alias="status"),
+    task_status: TaskStatus | None = Query(default=None, alias="status"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[TaskRead]:

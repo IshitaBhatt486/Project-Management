@@ -21,9 +21,11 @@ import type {
 
 import type {
   Activity,
+  ActivityLogList,
   DashboardSummary,
   HealthStatus,
   ListActivityParams,
+  ListProjectActivityByProjectParams,
   ListProjectsParams,
   ListTasksParams,
   LoginInput,
@@ -810,6 +812,95 @@ export const useArchiveProject = <TError = ErrorType<void>,
       > => {
       return useMutation(getArchiveProjectMutationOptions(options));
     }
+
+export const getListProjectActivityByProjectUrl = (projectId: number,
+    params?: ListProjectActivityByProjectParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/projects/${projectId}/activity?${stringifiedParams}` : `/api/projects/${projectId}/activity`
+}
+
+/**
+ * @summary List project activity
+ */
+export const listProjectActivityByProject = async (projectId: number,
+    params?: ListProjectActivityByProjectParams, options?: Parameters<typeof customFetch>[1]): Promise<ActivityLogList> => {
+
+  return customFetch<ActivityLogList>(getListProjectActivityByProjectUrl(projectId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProjectActivityByProjectQueryKey = (projectId: number,
+    params?: ListProjectActivityByProjectParams,) => {
+    return [
+    `/api/projects/${projectId}/activity`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListProjectActivityByProjectQueryOptions = <TData = Awaited<ReturnType<typeof listProjectActivityByProject>>, TError = ErrorType<void>>(projectId: number,
+    params?: ListProjectActivityByProjectParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjectActivityByProject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProjectActivityByProjectQueryKey(projectId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProjectActivityByProject>>> = ({ signal }) => listProjectActivityByProject(projectId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProjectActivityByProject>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProjectActivityByProjectQueryResult = NonNullable<Awaited<ReturnType<typeof listProjectActivityByProject>>>
+export type ListProjectActivityByProjectQueryError = ErrorType<void>
+
+
+/**
+ * @summary List project activity
+ */
+
+export function useListProjectActivityByProject<TData = Awaited<ReturnType<typeof listProjectActivityByProject>>, TError = ErrorType<void>>(
+ projectId: number,
+    params?: ListProjectActivityByProjectParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProjectActivityByProject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProjectActivityByProjectQueryOptions(projectId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getDeleteProjectUrl = (projectId: number,) => {
 

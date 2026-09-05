@@ -272,6 +272,39 @@ export interface Activity {
   createdAt: string;
 }
 
+export type ActivityLogAction = typeof ActivityLogAction[keyof typeof ActivityLogAction];
+
+
+export const ActivityLogAction = {
+  project_created: 'project_created',
+  project_updated: 'project_updated',
+  user_invited: 'user_invited',
+  user_removed: 'user_removed',
+  role_changed: 'role_changed',
+  project_archived: 'project_archived',
+} as const;
+
+export type ActivityLogMetadata = { [key: string]: unknown };
+
+export interface ActivityLog {
+  id: number;
+  projectId: number;
+  userId: number;
+  actorName: string;
+  projectName: string;
+  action: ActivityLogAction;
+  metadata: ActivityLogMetadata;
+  message: string;
+  createdAt: string;
+}
+
+export interface ActivityLogList {
+  items: ActivityLog[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export type ListProjectsParams = {
 /**
  * @maxLength 120
@@ -287,6 +320,18 @@ page?: number;
  */
 pageSize?: number;
 status?: ProjectStatus;
+};
+
+export type ListProjectActivityByProjectParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+pageSize?: number;
 };
 
 export type ListTasksParams = {

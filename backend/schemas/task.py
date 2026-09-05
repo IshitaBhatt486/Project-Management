@@ -1,6 +1,8 @@
 from datetime import date
 
-from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
+from typing import Literal
+
+from pydantic import AliasGenerator, BaseModel, ConfigDict, Field, field_validator
 
 
 camel_case = AliasGenerator(
@@ -19,17 +21,28 @@ api_model_config = ConfigDict(
     populate_by_name=True,
 )
 
+TaskStatus = Literal["backlog", "todo", "in_progress", "in_review", "done"]
+TaskPriority = Literal["low", "medium", "high", "urgent"]
+
 
 class TaskBase(BaseModel):
-    project_id: int
+    project_id: int = Field(gt=0)
     title: str = Field(min_length=1, max_length=240)
-    description: str = ""
-    status: str = "todo"
-    priority: str = "medium"
-    assignee: str = ""
+    description: str = Field(default="", max_length=4000)
+    status: TaskStatus = "todo"
+    priority: TaskPriority = "medium"
+    assignee: str = Field(default="", max_length=120)
     due_date: date | None = None
 
     model_config = api_model_config
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Task title cannot be blank")
+        return value
 
 
 class TaskCreate(TaskBase):
@@ -38,13 +51,23 @@ class TaskCreate(TaskBase):
 
 class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=240)
-    description: str | None = None
-    status: str | None = None
-    priority: str | None = None
-    assignee: str | None = None
+    description: str | None = Field(default=None, max_length=4000)
+    status: TaskStatus | None = None
+    priority: TaskPriority | None = None
+    assignee: str | None = Field(default=None, max_length=120)
     due_date: date | None = None
 
     model_config = api_model_config
+
+    @field_validator("title")
+    @classmethod
+    def updated_title_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("Task title cannot be blank")
+        return value
 
 
 class TaskRead(TaskBase):

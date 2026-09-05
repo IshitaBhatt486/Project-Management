@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes import router
 from backend.core.config import settings
+from backend.core.csrf import CSRFMiddleware
 
 app = FastAPI(
     title="Project Management API",
@@ -17,5 +18,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CSRFMiddleware)
 
 app.include_router(router, prefix="/api")

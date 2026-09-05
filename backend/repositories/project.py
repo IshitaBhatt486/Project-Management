@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -84,3 +86,22 @@ class ProjectRepository:
             ).where(Task.project_id == project_id)
         ).one()
         return int(task_count), int(completed_count)
+
+    def counts_for_projects(
+        self, db: Session, project_ids: Sequence[int]
+    ) -> dict[int, tuple[int, int]]:
+        if not project_ids:
+            return {}
+        rows = db.execute(
+            select(
+                Task.project_id,
+                func.count(Task.id),
+                func.count(Task.id).filter(Task.status == "done"),
+            )
+            .where(Task.project_id.in_(project_ids))
+            .group_by(Task.project_id)
+        ).all()
+        return {
+            project_id: (int(task_count), int(completed_count))
+            for project_id, task_count, completed_count in rows
+        }

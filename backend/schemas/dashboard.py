@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Any
 
-from pydantic import AliasGenerator, BaseModel, ConfigDict
+from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
 
 
 camel_case = AliasGenerator(
@@ -37,6 +38,35 @@ class ActivityRead(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,
+        alias_generator=camel_case,
+        populate_by_name=True,
+    )
+
+
+class ActivityLogRead(BaseModel):
+    id: int
+    project_id: int
+    user_id: int
+    actor_name: str
+    project_name: str
+    action: str
+    metadata: dict[str, Any]
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(
+        alias_generator=camel_case,
+        populate_by_name=True,
+    )
+
+
+class ActivityLogList(BaseModel):
+    items: list[ActivityLogRead]
+    total: int
+    page: int
+    page_size: int = Field(serialization_alias="pageSize")
+
+    model_config = ConfigDict(
         alias_generator=camel_case,
         populate_by_name=True,
     )

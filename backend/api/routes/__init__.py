@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from backend.api.routes.auth import router as auth_router
+from backend.api.routes.activity_logs import router as activity_logs_router
 from backend.api.routes.dashboard import router as dashboard_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.members import router as members_router
@@ -9,6 +10,7 @@ from backend.api.routes.tasks import router as tasks_router
 
 router = APIRouter()
 router.include_router(auth_router)
+router.include_router(activity_logs_router)
 router.include_router(health_router)
 router.include_router(projects_router)
 router.include_router(members_router)

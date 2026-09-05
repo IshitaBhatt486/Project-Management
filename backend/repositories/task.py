@@ -18,7 +18,7 @@ class TaskRepository:
             .join(Project)
             .join(ProjectMember, ProjectMember.project_id == Project.id)
             .where(ProjectMember.user_id == owner_id)
-            .order_by(Task.created_at.desc())
+            .order_by(Task.created_at.desc(), Task.id.desc())
         )
         if project_id is not None:
             query = query.where(Task.project_id == project_id)

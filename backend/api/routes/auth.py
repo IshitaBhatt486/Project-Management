@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.api.dependencies import get_current_user
 from backend.core.config import settings
+from backend.core.rate_limit import rate_limit_auth
 from backend.core.security import AUTH_COOKIE_NAME, create_session_token
 from backend.db.models import User
 from backend.db.session import get_db
@@ -36,6 +37,7 @@ def register(
     response: Response,
     db: Session = Depends(get_db),
 ) -> UserRead:
+    rate_limit_auth(request)
     user = service.register(db, payload)
     if not user:
         raise HTTPException(status_code=409, detail="An account with that email already exists")
@@ -50,6 +52,7 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> UserRead:
+    rate_limit_auth(request)
     user = service.authenticate(db, payload)
     if not user:
         raise HTTPException(status_code=401, detail="Email or password is incorrect")

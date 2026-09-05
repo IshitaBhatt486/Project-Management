@@ -8,9 +8,14 @@
 
 export * from './activity';
 export * from './activityKind';
+export * from './activityLog';
+export * from './activityLogAction';
+export * from './activityLogList';
+export * from './activityLogMetadata';
 export * from './dashboardSummary';
 export * from './healthStatus';
 export * from './listActivityParams';
+export * from './listProjectActivityByProjectParams';
 export * from './listProjectsParams';
 export * from './listTasksParams';
 export * from './listTasksStatus';

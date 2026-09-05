@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.base import Base
@@ -8,6 +8,9 @@ from backend.db.base import Base
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (
+        Index("ix_projects_status_updated_at", "status", "updated_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -37,6 +40,9 @@ class Project(Base):
     members: Mapped[list["ProjectMember"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -53,12 +59,14 @@ class User(Base):
     memberships: Mapped[list["ProjectMember"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="user")
 
 
 class ProjectMember(Base):
     __tablename__ = "project_members"
     __table_args__ = (
         UniqueConstraint("project_id", "user_id", name="uq_project_members_project_user"),
+        Index("ix_project_members_user_project", "user_id", "project_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -76,6 +84,9 @@ class ProjectMember(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        Index("ix_tasks_project_created_at", "project_id", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
@@ -96,11 +107,48 @@ class Task(Base):
 
 class Activity(Base):
     __tablename__ = "activity"
+    __table_args__ = (
+        Index("ix_activity_project_created_at", "project_id", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
+    )
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     message: Mapped[str] = mapped_column(String(240), nullable=False)
     project_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    __table_args__ = (
+        Index(
+            "ix_activity_logs_project_created_at",
+            "project_id",
+            "created_at",
+            "id",
+        ),
+        Index("ix_activity_logs_user_id", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    project: Mapped[Project] = relationship(back_populates="activity_logs")
+    user: Mapped[User] = relationship(back_populates="activity_logs")

@@ -230,6 +230,43 @@ export const ArchiveProjectResponse = zod.object({
 
 
 /**
+ * @summary List project activity
+ */
+export const ListProjectActivityByProjectParams = zod.object({
+  "projectId": zod.coerce.number()
+})
+
+export const listProjectActivityByProjectQueryPageDefault = 1;
+
+export const listProjectActivityByProjectQueryPageSizeDefault = 10;
+export const listProjectActivityByProjectQueryPageSizeMax = 50;
+
+
+
+export const ListProjectActivityByProjectQueryParams = zod.object({
+  "page": zod.coerce.number().min(1).default(listProjectActivityByProjectQueryPageDefault),
+  "pageSize": zod.coerce.number().min(1).max(listProjectActivityByProjectQueryPageSizeMax).default(listProjectActivityByProjectQueryPageSizeDefault)
+})
+
+export const ListProjectActivityByProjectResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "projectId": zod.number(),
+  "userId": zod.number(),
+  "actorName": zod.string(),
+  "projectName": zod.string(),
+  "action": zod.enum(['project_created', 'project_updated', 'user_invited', 'user_removed', 'role_changed', 'project_archived']),
+  "metadata": zod.record(zod.string(), zod.unknown()),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number()
+})
+
+
+/**
  * @summary Delete an owned project
  */
 export const DeleteProjectParams = zod.object({
